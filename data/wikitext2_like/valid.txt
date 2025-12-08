@@ -1,0 +1,16 @@
+Validation datasets are often smaller than training sets,
+but they play a crucial role in measuring generalization.
+A language model that performs well on validation text demonstrates
+an ability to capture linguistic patterns beyond memorized examples.
+
+Modern researchers rely on perplexity as a key metric for evaluating
+the predictive power of generative models. Lower perplexity typically
+indicates stronger fluency and a better understanding of context.
+
+However, perplexity alone rarely tells the whole story.
+Models may achieve strong scores while still failing
+on reasoning tasks or producing contradictory statements.
+
+As models grow, the challenge of evaluating them becomes more complex.
+Researchers continue to explore new benchmarks, probing methods,
+and diagnostic tools to understand model behavior.

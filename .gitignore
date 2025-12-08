@@ -1,0 +1,11 @@
+# 模型和训练输出不要传到 GitHub
+outputs/
+checkpoints/
+runs/
+*.safetensors
+*.bin
+*.pt
+
+# 常见缓存
+__pycache__/
+*.log
