@@ -1,0 +1,32 @@
+# configs/exp1_lora_label.yaml
+
+# === 基础设置 ===
+model_name: "gpt2"                 # 先沿用你脚本1跑通的模型
+task_type: "classification"
+num_labels: 2
+
+seed: 42
+output_dir: "outputs/exp1_lora_label"
+
+# === 数据：必须和 optimized 用同一个任务/切分风格 ===
+data:
+  dataset_name: "glue/sst2"
+  dataset_config_name: null
+  max_length: 128
+  batch_size: 8
+  num_workers: 0
+
+# === LoRA 超参 ===
+lora:
+  rank: 8
+  alpha: 32
+  dropout: 0.1
+  # GPT2 常见 target（最小可行）
+  target_modules: [ "c_attn", "c_proj" ]
+
+# === 训练超参（这是“现实 baseline 微调”） ===
+train:
+  lr: 1e-4
+  weight_decay: 0.01
+  num_epochs: 3
+  grad_clip: 1.0

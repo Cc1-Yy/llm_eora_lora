@@ -1,215 +1,161 @@
-# scripts/2_exp1_lora_label.py
+from __future__ import annotations
+
 import os
-from dataclasses import dataclass
-from typing import List
+import sys
+import json
+import argparse
+import random
+from typing import Dict, Any
 
-import math
+import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+import yaml
 from torch.optim import AdamW
+from tqdm import tqdm
 
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import LoraConfig, get_peft_model
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-
-@dataclass
-class LoraTrainConfig:
-    # 模型与数据路径
-    model_name: str = "gpt2-medium"  # Base model
-    train_path: str = "data/wikitext2_like/train.txt"
-    valid_path: str = "data/wikitext2_like/valid.txt"
-
-    # LoRA 实验 1 的输出目录
-    output_dir: str = "outputs/exp1/lora_label_r8"
-
-    # 训练相关
-    block_size: int = 256
-    num_epochs: int = 1         # 先跑通，之后你可以改大一点
-    batch_size: int = 2
-    learning_rate: float = 5e-5
-    weight_decay: float = 0.01
-    gradient_accumulation_steps: int = 4
-    seed: int = 42
-
-    # LoRA 配置（你可以之后 sweep r=4,8,16...）
-    lora_r: int = 8
-    lora_alpha: int = 16
-    lora_dropout: float = 0.05
-    # GPT-2 里常用的 target modules：c_attn, c_proj
-    target_modules: tuple = ("c_attn", "c_proj")
-
-
-class TextBlockDataset(Dataset):
-    """
-    跟 1_train_optimized_minimal 里的逻辑一样：
-    - 读一个纯文本文件
-    - tokenizer 编码成一条长序列
-    - 切成 block_size 大小的训练样本
-    """
-
-    def __init__(self, file_path: str, tokenizer, block_size: int = 256):
-        assert os.path.exists(file_path), f"File not found: {file_path}"
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-
-        encodings = tokenizer(
-            text,
-            add_special_tokens=False,
-            return_attention_mask=False,
-        )
-        input_ids: List[int] = encodings["input_ids"]
-
-        n_blocks = len(input_ids) // block_size
-        input_ids = input_ids[: n_blocks * block_size]
-
-        self.examples = []
-        for i in range(n_blocks):
-            block = input_ids[i * block_size : (i + 1) * block_size]
-            self.examples.append(torch.tensor(block, dtype=torch.long))
-
-        self.block_size = block_size
-
-    def __len__(self):
-        return len(self.examples)
-
-    def __getitem__(self, idx):
-        input_ids = self.examples[idx]
-        return {
-            "input_ids": input_ids,
-            "labels": input_ids.clone(),  # causal LM: 预测下一个 token
-        }
+from src.model_utils import load_base_model_and_tokenizer
+from src.data_utils import get_dataloaders
+from src.eval_utils import evaluate
+from src.lora_utils import add_lora_to_model, print_trainable_params
 
 
 def set_seed(seed: int):
-    import random
-    import numpy as np
-
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
-def evaluate(model, dataloader, device):
-    model.eval()
-    total_loss = 0.0
-    n_batches = 0
+def load_config(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
-    with torch.no_grad():
-        for batch in dataloader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            outputs = model(**batch)
-            loss = outputs.loss
-            total_loss += loss.item()
-            n_batches += 1
 
-    model.train()
-    if n_batches == 0:
-        return float("nan")
-    return total_loss / n_batches
+def ensure_dir(path: str):
+    os.makedirs(path, exist_ok=True)
 
 
 def main():
-    cfg = LoraTrainConfig()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, required=True)
+    args = parser.parse_args()
 
-    os.makedirs(cfg.output_dir, exist_ok=True)
+    config = load_config(args.config)
 
-    set_seed(cfg.seed)
+    seed = int(config.get("seed", 42))
+    set_seed(seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    output_dir = config.get("output_dir", "outputs/exp1_lora_label")
+    ensure_dir(output_dir)
 
-    # 1. 加载 tokenizer（跟 Optimized 一致）
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    # 1) load base model & tokenizer
+    base_model, tokenizer = load_base_model_and_tokenizer(config)
 
-    # 2. 构造数据集 / dataloader
-    train_dataset = TextBlockDataset(cfg.train_path, tokenizer, cfg.block_size)
-    valid_dataset = TextBlockDataset(cfg.valid_path, tokenizer, cfg.block_size)
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=True,
-        drop_last=True,
-    )
-    valid_loader = DataLoader(
-        valid_dataset,
-        batch_size=cfg.batch_size,
-        shuffle=False,
-        drop_last=False,
-    )
-
-    print(f"# train batches: {len(train_loader)}, # valid batches: {len(valid_loader)}")
-
-    # 3. 加载 Base Model
-    base_model = AutoModelForCausalLM.from_pretrained(cfg.model_name)
-    base_model.resize_token_embeddings(len(tokenizer))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     base_model.to(device)
 
-    # 4. 应用 LoRA（label-supervised 微调）
-    lora_config = LoraConfig(
-        r=cfg.lora_r,
-        lora_alpha=cfg.lora_alpha,
-        lora_dropout=cfg.lora_dropout,
-        bias="none",
-        target_modules=list(cfg.target_modules),
-        task_type="CAUSAL_LM",
-    )
-    model = get_peft_model(base_model, lora_config)
-    model.print_trainable_parameters()
+    # 2) dataloaders
+    train_loader, val_loader, test_loader = get_dataloaders(config, tokenizer)
 
-    # 5. 优化器（只对 LoRA 可训练参数等）
-    optimizer = AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
+    # 3) add LoRA
+    model = add_lora_to_model(base_model, config)
+    model.to(device)
 
-    global_step = 0
+    print_trainable_params(model)
 
-    # 6. 训练循环（label-supervised：目标就是语言模型的下一个 token）
-    model.train()
-    for epoch in range(cfg.num_epochs):
-        print(f"Epoch {epoch + 1}/{cfg.num_epochs}")
-        running_loss = 0.0
+    # 4) optimizer (只优化 requires_grad 参数)
+    train_cfg = config.get("train", {})
+    lr = float(train_cfg.get("lr", 1e-4))
+    weight_decay = float(train_cfg.get("weight_decay", 0.0))
+    num_epochs = int(train_cfg.get("num_epochs", 3))
+    grad_clip = float(train_cfg.get("grad_clip", 1.0))
 
-        for step, batch in enumerate(train_loader):
+    optim_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = AdamW(optim_params, lr=lr, weight_decay=weight_decay)
+
+    # 5) train loop
+    best_metric = -1e9
+    best_state = None
+
+    for epoch in range(1, num_epochs + 1):
+        model.train()
+        total_loss = 0.0
+        total_examples = 0
+
+        loop = tqdm(train_loader, desc=f"[Exp1 LoRA-Label] Epoch {epoch}/{num_epochs}")
+
+        for batch in loop:
             batch = {k: v.to(device) for k, v in batch.items()}
 
             outputs = model(**batch)
             loss = outputs.loss
-            loss = loss / cfg.gradient_accumulation_steps
+
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
 
-            if (step + 1) % cfg.gradient_accumulation_steps == 0:
-                optimizer.step()
-                optimizer.zero_grad()
-                global_step += 1
+            if grad_clip and grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(optim_params, grad_clip)
 
-            running_loss += loss.item() * cfg.gradient_accumulation_steps
+            optimizer.step()
 
-            if (step + 1) % 50 == 0:
-                avg_loss = running_loss / 50
-                print(f"  step {step + 1}, train loss: {avg_loss:.4f}")
-                running_loss = 0.0
+            bs = batch["input_ids"].size(0)
+            total_loss += loss.item() * bs
+            total_examples += bs
 
-        # 每个 epoch 做一次验证
-        val_loss = evaluate(model, valid_loader, device)
-        if not math.isnan(val_loss):
-            try:
-                ppl = math.exp(val_loss)
-            except OverflowError:
-                ppl = float("inf")
-            print(f"  >> validation loss: {val_loss:.4f}, ppl: {ppl:.2f}")
-        else:
-            print("  >> no valid batches, skip validation metrics")
+            loop.set_postfix(loss=loss.item())
 
-    # 7. 只保存 LoRA adapter（PEFT 的 save_pretrained）
-    model.save_pretrained(cfg.output_dir)
-    tokenizer.save_pretrained(cfg.output_dir)
+        # epoch end eval
+        val_metrics = evaluate(model, val_loader, config)
 
-    print(f"Finished LoRA label-supervised training for Exp1.")
-    print(f"LoRA adapter saved to: {cfg.output_dir}")
+        # 分类任务用 accuracy 选最优
+        score = val_metrics.get("accuracy", -1.0)
+
+        if score > best_metric:
+            best_metric = score
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+
+        train_loss = total_loss / max(total_examples, 1)
+        print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val={val_metrics}")
+
+    # restore best
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    # 6) final eval
+    val_metrics = evaluate(model, val_loader, config)
+    test_metrics = evaluate(model, test_loader, config)
+
+    metrics = {
+        "val": val_metrics,
+        "test": test_metrics,
+        "seed": seed,
+        "model_name": config.get("model_name"),
+        "task_type": config.get("task_type"),
+        "data": config.get("data", {}),
+        "lora": config.get("lora", {}),
+        "train": config.get("train", {}),
+    }
+
+    # 7) save adapter
+    adapter_dir = os.path.join(output_dir, "adapter")
+    ensure_dir(adapter_dir)
+
+    # PEFT 标准保存 adapter
+    model.save_pretrained(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
+
+    # 8) save metrics
+    with open(os.path.join(output_dir, "metrics.json"), "w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    print("=== Exp1 LoRA(label) done ===")
+    print("Val metrics:", val_metrics)
+    print("Test metrics:", test_metrics)
+    print("Saved to:", output_dir)
 
 
 if __name__ == "__main__":
