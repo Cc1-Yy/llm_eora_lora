@@ -119,6 +119,18 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
     if test_ds is None:
         test_ds = val_ds
 
+    try:
+        if "labels" in test_ds.column_names:
+            sample = test_ds.select(range(min(200, len(test_ds))))
+            labels = sample["labels"]
+            # labels 可能是 list 或 tensor
+            if hasattr(labels, "tolist"):
+                labels = labels.tolist()
+            if all(l == -1 for l in labels):
+                test_ds = val_ds
+    except Exception:
+        pass
+
     # 9) dataloaders
     train_loader = DataLoader(
         train_ds,
