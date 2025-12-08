@@ -1,4 +1,6 @@
-torch
-transformers
-datasets
+torch~=2.10.0.dev20251124
+transformers~=4.57.1
+datasets~=4.3.0
 accelerate
+tqdm~=4.67.1
+peft~=0.17.1
