@@ -9,3 +9,7 @@ runs/
 # 常见缓存
 __pycache__/
 *.log
+
+# IDE
+.idea/
+*.iml
