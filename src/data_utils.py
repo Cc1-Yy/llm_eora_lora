@@ -18,12 +18,14 @@ def _get_text_and_label_keys(dataset_name: str) -> Dict[str, str]:
     """
     name = dataset_name.lower()
     if name in ["sst2", "glue/sst2", "glue"]:
-        return {"text": "sentence", "label": "label"}
+        return {"text": "sentence", "label": "label"}  # GLUE SST2 uses 'sentence' for text
     if name in ["ag_news"]:
         return {"text": "text", "label": "label"}
     if name in ["yelp_polarity"]:
         return {"text": "text", "label": "label"}
-    # fallback
+    # Add more datasets here as necessary...
+
+    # Default fallback (for datasets that may have 'text' field)
     return {"text": "text", "label": "label"}
 
 
@@ -34,6 +36,7 @@ def build_tokenize_fn(tokenizer, text_key: str, max_length: int):
             truncation=True,
             max_length=max_length,
         )
+
     return fn
 
 
@@ -80,6 +83,9 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
     else:
         ds = load_dataset(dataset_name, dataset_config_name) if dataset_config_name else load_dataset(dataset_name)
         canonical_name = dataset_name
+
+    # Print dataset columns to debug the available fields
+    print(f"Loaded dataset columns: {ds['train'].column_names}")
 
     # 2) infer keys
     if task_type == "classification":
