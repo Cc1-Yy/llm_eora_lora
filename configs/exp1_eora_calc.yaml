@@ -1,0 +1,22 @@
+# configs/exp1_eora_calc.yaml
+# （名字你先不改也行，但逻辑上更像“量化恢复线”）
+
+seed: 42
+output_dir: "outputs/exp1_eora_calc"
+
+# 这两个是 GPTQModel EoRA 的关键输入
+optimized_model_dir: "outputs/optimized_minimal/model"
+quantized_model_dir: "outputs/optimized_minimal_gptq_4bit"
+
+# 数据（用于采样校准文本）
+data:
+  dataset_name: "glue/sst2"
+  dataset_config_name: null
+  max_length: 128
+  batch_size: 8
+  num_workers: 0
+
+# EoRA 超参
+eora:
+  rank: 8
+  calibration_num_samples: 512
