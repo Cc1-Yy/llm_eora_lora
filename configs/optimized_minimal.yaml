@@ -1,5 +1,5 @@
 model_name: "gpt2"
-task_type: "causal_lm"
+task_type: "classification"
 num_labels: 2
 
 data:
