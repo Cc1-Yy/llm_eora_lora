@@ -19,9 +19,7 @@ def _get_text_and_label_keys(dataset_name: str) -> Dict[str, str]:
     name = dataset_name.lower()
     if name in ["sst2", "glue/sst2", "glue"]:
         return {"text": "sentence", "label": "label"}  # GLUE SST2 uses 'sentence' for text
-    if name in ["ag_news"]:
-        return {"text": "text", "label": "label"}
-    if name in ["yelp_polarity"]:
+    if name in ["ag_news", "yelp_polarity"]:
         return {"text": "text", "label": "label"}
     # Add more datasets here as necessary...
 
@@ -93,7 +91,7 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         text_key, label_key = keys["text"], keys["label"]
     else:
         # causal_lm: no label required
-        text_key = text_key_override or "text"
+        text_key = text_key_override or _get_text_and_label_keys(canonical_name)["text"]
         label_key = None
 
     # 3) tokenize
