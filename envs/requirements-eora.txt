@@ -1,0 +1,80 @@
+accelerate==1.12.0
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.2
+aiosignal==1.4.0
+anyio==4.12.0
+attrs==25.4.0
+autopep8==2.3.2
+brotlicffi @ file:///C:/miniconda3/conda-bld/brotlicffi_1764961370587/work
+certifi==2025.11.12
+cffi @ file:///C:/miniconda3/conda-bld/cffi_1761832792265/work
+charset-normalizer==3.4.4
+colorama==0.4.6
+datasets==4.4.1
+Device-SMI==0.5.2
+dill==0.4.0
+filelock==3.20.0
+frozenlist==1.8.0
+fsspec==2025.12.0
+gmpy2 @ file:///C:/miniconda3/conda-bld/gmpy2_1764748103115/work
+GPTQModel==5.6.0
+h11==0.16.0
+hf_transfer==0.1.9
+httpcore==1.0.9
+httpx==0.28.1
+huggingface-hub==0.36.0
+idna==3.11
+iniconfig==2.3.0
+Jinja2 @ file:///C:/b/abs_920kup4e6u/croot/jinja2_1741711580669/work
+joblib==1.5.2
+kernels==0.11.3
+LogBar==0.1.8
+MarkupSafe @ file:///C:/b/abs_a0ma7ge0jc/croot/markupsafe_1738584052792/work
+mkl-service==2.4.0
+mkl_fft @ file:///C:/Users/dev-admin/mkl/mkl_fft_1730823082242/work
+mkl_random @ file:///C:/Users/dev-admin/mkl/mkl_random_1730822522280/work
+mpmath @ file:///C:/b/abs_7833jrbiox/croot/mpmath_1690848321154/work
+multidict==6.7.0
+multiprocess==0.70.18
+networkx @ file:///C:/b/abs_6c02vx1ct4/croot/networkx_1756709289161/work
+numpy==2.3.5
+packaging==25.0
+pandas==2.3.3
+pillow @ file:///C:/b/abs_b50vowcrzo/croot/pillow_1738010273782/work
+pluggy==1.6.0
+propcache==0.4.1
+psutil==7.1.3
+pyarrow==22.0.0
+pycodestyle==2.14.0
+pycparser @ file:///C:/miniconda3/conda-bld/pycparser_1757496060165/work
+Pygments==2.19.2
+PyPcre==0.2.6
+PySocks @ file:///C:/miniconda3/conda-bld/pysocks_1761753028158/work
+pytest==8.4.2
+python-dateutil==2.9.0.post0
+pytz==2025.2
+PyYAML==6.0.3
+random_word==1.0.13
+regex==2025.11.3
+requests==2.32.5
+safetensors==0.7.0
+scikit-learn==1.7.2
+scipy==1.16.3
+six==1.17.0
+sympy==1.13.1
+threadpoolctl==3.6.0
+TokeNicer @ git+https://github.com/ModelCloud/Tokenicer.git@e65bc9f732f8226343392bba5c36f7db4b330fc7
+tokenizers==0.22.1
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
+tqdm==4.67.1
+transformers==4.57.3
+triton @ file:///C:/Users/Cc1_Yyn/Downloads/triton-3.3.0-py3-none-any.whl#sha256=1c7c4903b2c68fa786790359d53d95693caef9b53f757a628260946215462a6f
+triton-windows==3.5.1.post22
+typing_extensions==4.15.0
+tzdata==2025.2
+urllib3==2.6.1
+win_inet_pton @ file:///C:/miniconda3/conda-bld/win_inet_pton_1761746278197/work
+xxhash==3.6.0
+yarl==1.22.0

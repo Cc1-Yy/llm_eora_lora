@@ -1,0 +1,11 @@
+name: eora-gpu
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pytorch
+  - pytorch-cuda=12.1
+  - torchaudio
+  - torchvision
+  - pcre2
+prefix: C:\Users\Cc1_Yyn\Anaconda3\envs\eora-gpu
