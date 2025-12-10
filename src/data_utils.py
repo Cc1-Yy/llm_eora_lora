@@ -5,13 +5,16 @@ from typing import Dict, Any
 from torch.utils.data import DataLoader
 
 from datasets import load_dataset
-from transformers import DataCollatorWithPadding, DataCollatorForLanguageModeling
+from transformers import (
+    DataCollatorWithPadding,
+    DataCollatorForLanguageModeling,
+)
 
 
 def _get_text_and_label_keys(dataset_name: str) -> Dict[str, str]:
     """
-    针对常见分类数据集，返回文本字段名和标签字段名。
-    你之后加数据集就往这里补一行。
+    Return text/label field names for common CLASSIFICATION datasets.
+    Extend this mapping as you add more datasets.
     """
     name = dataset_name.lower()
     if name in ["sst2", "glue/sst2", "glue"]:
@@ -20,7 +23,7 @@ def _get_text_and_label_keys(dataset_name: str) -> Dict[str, str]:
         return {"text": "text", "label": "label"}
     if name in ["yelp_polarity"]:
         return {"text": "text", "label": "label"}
-    # fallback（尽量不崩）
+    # fallback
     return {"text": "text", "label": "label"}
 
 
@@ -36,20 +39,20 @@ def build_tokenize_fn(tokenizer, text_key: str, max_length: int):
 
 def get_dataloaders(config: Dict[str, Any], tokenizer):
     """
-    支持:
-      - classification: 需要 label 字段 -> 会 rename_label
-      - causal_lm: 不需要 label -> 用 LM collator 自动生成 labels
+    Supports:
+      - classification: expects label field -> renames to "labels"
+      - causal_lm: no label field -> DataCollatorForLanguageModeling creates labels
 
-    期望 config 结构示例：
+    Expected config structure:
     config = {
         "task_type": "classification" | "causal_lm",
         "data": {
-            "dataset_name": "glue/sst2" / "wikitext",
+            "dataset_name": "glue/sst2" | "wikitext" | ...,
             "dataset_config_name": None,
             "max_length": 128,
             "batch_size": 8,
-            "num_workers": 2,
-            # 可选：当你用很不标准的数据集时手动指定文本字段
+            "num_workers": 0,
+            # optional override for non-standard datasets:
             # "text_key": "text"
         },
         "seed": 42,
@@ -69,7 +72,7 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         raise ValueError("config['data']['dataset_name'] is required.")
 
     # 1) load dataset
-    # 支持 "glue/sst2" 这种写法，也支持 dataset_config_name 分离写法
+    # Supports "glue/sst2" shorthand or split dataset_config_name style.
     if "/" in dataset_name and dataset_config_name is None:
         parts = dataset_name.split("/")
         ds = load_dataset(parts[0], parts[1])
@@ -83,19 +86,18 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         keys = _get_text_and_label_keys(canonical_name)
         text_key, label_key = keys["text"], keys["label"]
     else:
-        # causal_lm: 不需要 label
+        # causal_lm: no label required
         text_key = text_key_override or "text"
         label_key = None
 
     # 3) tokenize
     tokenize_fn = build_tokenize_fn(tokenizer, text_key, max_length)
 
-    # 提前确认 split 名
+    # 4) check splits
     has_val = "validation" in ds
     has_test = "test" in ds
 
-    # 4) map
-    # remove_cols: 只保留 tokenize 需要的原始字段
+    # 5) map (remove unused raw columns)
     if task_type == "classification":
         keep_raw = [text_key, label_key]
     else:
@@ -104,16 +106,22 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
     remove_cols = [c for c in ds["train"].column_names if c not in keep_raw]
     ds_tok = ds.map(tokenize_fn, batched=True, remove_columns=remove_cols)
 
-    # 5) rename label -> labels (仅分类)
+    # 6) filter empty examples for LM datasets (WikiText has many blank lines)
+    if task_type != "classification":
+        for split in list(ds_tok.keys()):
+            ds_tok[split] = ds_tok[split].filter(
+                lambda ex: len(ex.get("input_ids", [])) > 0
+            )
+
+    # 7) rename label -> labels (classification only)
     if task_type == "classification":
-        def rename_label(batch):
-            batch["labels"] = batch[label_key]
-            return batch
+        def rename_label(example):
+            example["labels"] = example[label_key]
+            return example
 
         ds_tok = ds_tok.map(rename_label, batched=False)
 
-    # 6) set format torch
-    # classification 要显式包含 labels
+    # 8) set format torch
     cols = ["input_ids", "attention_mask"]
     if task_type == "classification":
         cols.append("labels")
@@ -122,31 +130,30 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         keep = [c for c in cols if c in ds_tok[split].column_names]
         ds_tok[split].set_format(type="torch", columns=keep)
 
-    # 7) collator
+    # 9) collator
     if task_type == "classification":
         collator = DataCollatorWithPadding(tokenizer=tokenizer)
     else:
-        # causal_lm: 让 collator 自动构造 labels = input_ids
         collator = DataCollatorForLanguageModeling(
             tokenizer=tokenizer,
             mlm=False
         )
 
-    # 8) choose splits
+    # 10) choose splits
     train_ds = ds_tok["train"]
     val_ds = ds_tok["validation"] if has_val else None
     test_ds = ds_tok["test"] if has_test else None
 
-    # 若没有 validation，就从 train 切一点（最小可行）
+    # If no validation split, create one from train.
     if val_ds is None:
         split = train_ds.train_test_split(test_size=0.1, seed=int(config.get("seed", 42)))
         train_ds, val_ds = split["train"], split["test"]
 
-    # 若没有 test，就把 validation 当 test 先顶上（最小可行）
+    # If no test split, fallback to validation.
     if test_ds is None:
         test_ds = val_ds
 
-    # 你原来的保护逻辑：只对“分类任务 + 原生无 test”的情况做 labels==-1 检查
+    # Your original safety check: only for classification + no native test split.
     if task_type == "classification" and not has_test:
         try:
             if "labels" in test_ds.column_names:
@@ -159,7 +166,7 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         except Exception:
             pass
 
-    # 9) dataloaders
+    # 11) dataloaders
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
