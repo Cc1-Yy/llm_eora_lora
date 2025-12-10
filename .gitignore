@@ -1,15 +1,32 @@
+# =========================
 # 模型和训练输出不要传到 GitHub
+# =========================
 outputs/
 checkpoints/
 runs/
+
+# GPTQModel / EoRA 运行时生成的 offload 目录（如图那些 index.json）
+gptqmodel_offload/
+gptqmodel_offload/**
+
+# 常见模型权重文件
 *.safetensors
 *.bin
 *.pt
 
+# =========================
 # 常见缓存
+# =========================
 __pycache__/
 *.log
 
+# （可选）Python/工具缓存
+.cache/
+*.tmp
+
+# =========================
 # IDE
+# =========================
 .idea/
 *.iml
+.vscode/
