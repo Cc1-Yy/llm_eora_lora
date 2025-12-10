@@ -1,10 +1,11 @@
 model_name: "gpt2"
 task_type: "causal_lm"
-num_labels: 2
+seed: 42
+output_dir: "outputs/optimized_lm"
 
 data:
-  dataset_name: "glue/sst2"
-  dataset_config_name: null
+  dataset_name: "wikitext"
+  dataset_config_name: "wikitext-2-raw-v1"
   max_length: 128
   batch_size: 8
   num_workers: 0
@@ -14,7 +15,3 @@ train:
   weight_decay: 0.01
   num_epochs: 3
   grad_clip: 1.0
-  eval_every_steps: 0   # 0 表示按 epoch 验证
-
-output_dir: "outputs/optimized_minimal"
-seed: 42
