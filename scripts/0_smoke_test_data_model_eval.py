@@ -1,7 +1,14 @@
+import os
+import sys
 import json
 from pathlib import Path
 
 import torch
+
+# ---- Make imports robust no matter where you run this from ----
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.model_utils import load_base_model_and_tokenizer
 from src.data_utils import get_dataloaders
@@ -18,7 +25,7 @@ def main():
             "dataset_name": "glue/sst2",
             "max_length": 128,
             "batch_size": 4,
-            "num_workers": 0,
+            "num_workers": 0,  # Windows 先用 0，稳定后再尝试 2/4
         },
         "seed": 42,
     }
@@ -45,20 +52,23 @@ def main():
 
     # 3) 放到设备
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print("\n== Device ==")
+    print("Using device:", device)
     model.to(device)
+    print("Model param device:", next(model.parameters()).device)
 
     print("\n== Running evaluate on val ==")
     metrics = evaluate(model, val_loader, config)
     print("metrics:", metrics)
 
     # 4) 保存一份输出（可选）
-    out_path = Path("../outputs") / "smoke_test_metrics.json"
+    out_path = PROJECT_ROOT / "outputs" / "smoke_test_metrics.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with out_path.open("w") as f:
-        json.dump(metrics, f, indent=2)
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
 
-    print("\n✅ Smoke test done. Metrics saved to outputs/smoke_test_metrics.json")
+    print(f"\n✅ Smoke test done. Metrics saved to {out_path}")
 
 
 if __name__ == "__main__":
