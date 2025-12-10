@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Tuple, Dict, Any
-from dataclasses import dataclass
+from typing import Dict, Any
 
-import torch
 from torch.utils.data import DataLoader
 
 from datasets import load_dataset
-from transformers import DataCollatorWithPadding
+from transformers import DataCollatorWithPadding, DataCollatorForLanguageModeling
 
 
 def _get_text_and_label_keys(dataset_name: str) -> Dict[str, str]:
@@ -33,31 +31,39 @@ def build_tokenize_fn(tokenizer, text_key: str, max_length: int):
             truncation=True,
             max_length=max_length,
         )
-
     return fn
 
 
 def get_dataloaders(config: Dict[str, Any], tokenizer):
     """
+    支持:
+      - classification: 需要 label 字段 -> 会 rename_label
+      - causal_lm: 不需要 label -> 用 LM collator 自动生成 labels
+
     期望 config 结构示例：
     config = {
-        "task_type": "classification",
+        "task_type": "classification" | "causal_lm",
         "data": {
-            "dataset_name": "sst2",
-            "dataset_config_name": None,   # 可选
+            "dataset_name": "glue/sst2" / "wikitext",
+            "dataset_config_name": None,
             "max_length": 128,
             "batch_size": 8,
             "num_workers": 2,
+            # 可选：当你用很不标准的数据集时手动指定文本字段
+            # "text_key": "text"
         },
         "seed": 42,
     }
     """
+    task_type = config.get("task_type", "classification")
+
     data_cfg = config.get("data", {})
     dataset_name = data_cfg.get("dataset_name")
     dataset_config_name = data_cfg.get("dataset_config_name", None)
     max_length = int(data_cfg.get("max_length", 128))
     batch_size = int(data_cfg.get("batch_size", 8))
     num_workers = int(data_cfg.get("num_workers", 0))
+    text_key_override = data_cfg.get("text_key", None)
 
     if dataset_name is None:
         raise ValueError("config['data']['dataset_name'] is required.")
@@ -65,7 +71,6 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
     # 1) load dataset
     # 支持 "glue/sst2" 这种写法，也支持 dataset_config_name 分离写法
     if "/" in dataset_name and dataset_config_name is None:
-        # 例如 "glue/sst2"
         parts = dataset_name.split("/")
         ds = load_dataset(parts[0], parts[1])
         canonical_name = dataset_name
@@ -74,36 +79,58 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         canonical_name = dataset_name
 
     # 2) infer keys
-    keys = _get_text_and_label_keys(canonical_name)
-    text_key, label_key = keys["text"], keys["label"]
+    if task_type == "classification":
+        keys = _get_text_and_label_keys(canonical_name)
+        text_key, label_key = keys["text"], keys["label"]
+    else:
+        # causal_lm: 不需要 label
+        text_key = text_key_override or "text"
+        label_key = None
 
     # 3) tokenize
     tokenize_fn = build_tokenize_fn(tokenizer, text_key, max_length)
 
     # 提前确认 split 名
-    # 常见是 train/validation/test，有些是 train/test 需要自己切 val
     has_val = "validation" in ds
     has_test = "test" in ds
 
     # 4) map
-    remove_cols = [c for c in ds["train"].column_names if c not in [text_key, label_key]]
+    # remove_cols: 只保留 tokenize 需要的原始字段
+    if task_type == "classification":
+        keep_raw = [text_key, label_key]
+    else:
+        keep_raw = [text_key]
+
+    remove_cols = [c for c in ds["train"].column_names if c not in keep_raw]
     ds_tok = ds.map(tokenize_fn, batched=True, remove_columns=remove_cols)
 
-    # 5) rename label -> labels (HF Trainer & 自己写循环都更统一)
-    def rename_label(batch):
-        batch["labels"] = batch[label_key]
-        return batch
+    # 5) rename label -> labels (仅分类)
+    if task_type == "classification":
+        def rename_label(batch):
+            batch["labels"] = batch[label_key]
+            return batch
 
-    ds_tok = ds_tok.map(rename_label, batched=False)
+        ds_tok = ds_tok.map(rename_label, batched=False)
 
     # 6) set format torch
-    cols = ["input_ids", "attention_mask", "labels"]
+    # classification 要显式包含 labels
+    cols = ["input_ids", "attention_mask"]
+    if task_type == "classification":
+        cols.append("labels")
+
     for split in ds_tok.keys():
         keep = [c for c in cols if c in ds_tok[split].column_names]
         ds_tok[split].set_format(type="torch", columns=keep)
 
     # 7) collator
-    collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    if task_type == "classification":
+        collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    else:
+        # causal_lm: 让 collator 自动构造 labels = input_ids
+        collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer,
+            mlm=False
+        )
 
     # 8) choose splits
     train_ds = ds_tok["train"]
@@ -119,17 +146,18 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
     if test_ds is None:
         test_ds = val_ds
 
-    try:
-        if "labels" in test_ds.column_names:
-            sample = test_ds.select(range(min(200, len(test_ds))))
-            labels = sample["labels"]
-            # labels 可能是 list 或 tensor
-            if hasattr(labels, "tolist"):
-                labels = labels.tolist()
-            if all(l == -1 for l in labels):
-                test_ds = val_ds
-    except Exception:
-        pass
+    # 你原来的保护逻辑：只对“分类任务 + 原生无 test”的情况做 labels==-1 检查
+    if task_type == "classification" and not has_test:
+        try:
+            if "labels" in test_ds.column_names:
+                sample = test_ds.select(range(min(200, len(test_ds))))
+                labels = sample["labels"]
+                if hasattr(labels, "tolist"):
+                    labels = labels.tolist()
+                if all(l == -1 for l in labels):
+                    test_ds = val_ds
+        except Exception:
+            pass
 
     # 9) dataloaders
     train_loader = DataLoader(
