@@ -58,6 +58,10 @@ def main():
 
     # 2) dataloaders
     train_loader, val_loader, test_loader = get_dataloaders(config, tokenizer)
+    print("test batches:", len(test_loader))
+    batch = next(iter(test_loader))
+    print("test batch keys:", batch.keys())
+    print("has labels:", "labels" in batch)
 
     # 3) train optimized
     model = train_optimized(
