@@ -73,7 +73,6 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         raise ValueError("config['data']['dataset_name'] is required.")
 
     # 1) load dataset
-    # Supports "glue/sst2" shorthand or split dataset_config_name style.
     if "/" in dataset_name and dataset_config_name is None:
         parts = dataset_name.split("/")
         ds = load_dataset(parts[0], parts[1])
@@ -90,7 +89,6 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         keys = _get_text_and_label_keys(canonical_name)
         text_key, label_key = keys["text"], keys["label"]
     else:
-        # causal_lm: no label required
         text_key = text_key_override or _get_text_and_label_keys(canonical_name)["text"]
         label_key = None
 
@@ -125,7 +123,23 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
 
         ds_tok = ds_tok.map(rename_label, batched=False)
 
-    # 8) set format torch
+        # 8) 只检查 train / validation
+        def check_labels(example):
+            if example["labels"] < 0 or example["labels"] > 1:
+                raise ValueError(
+                    f"Invalid label value {example['labels']} detected. Labels must be 0 or 1."
+                )
+            return example
+
+        for sp in ["train", "validation"]:
+            if sp in ds_tok:
+                ds_tok[sp] = ds_tok[sp].map(check_labels, batched=False)
+
+        # 9) 做法B：test 里 -1 直接删掉
+        if "test" in ds_tok:
+            ds_tok["test"] = ds_tok["test"].filter(lambda ex: ex["labels"] != -1)
+
+    # 10) set format torch
     cols = ["input_ids", "attention_mask"]
     if task_type == "classification":
         cols.append("labels")
@@ -134,7 +148,7 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         keep = [c for c in cols if c in ds_tok[split].column_names]
         ds_tok[split].set_format(type="torch", columns=keep)
 
-    # 9) collator
+    # 11) collator
     if task_type == "classification":
         collator = DataCollatorWithPadding(tokenizer=tokenizer)
     else:
@@ -143,7 +157,7 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
             mlm=False
         )
 
-    # 10) choose splits
+    # 12) choose splits
     train_ds = ds_tok["train"]
     val_ds = ds_tok["validation"] if has_val else None
     test_ds = ds_tok["test"] if has_test else None
@@ -170,7 +184,7 @@ def get_dataloaders(config: Dict[str, Any], tokenizer):
         except Exception:
             pass
 
-    # 11) dataloaders
+    # 13) dataloaders
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
