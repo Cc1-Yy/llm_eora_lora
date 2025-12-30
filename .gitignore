@@ -4,6 +4,7 @@
 outputs/
 checkpoints/
 runs/
+logs/
 
 # GPTQModel / EoRA 运行时生成的 offload 目录（如图那些 index.json）
 gptqmodel_offload/
