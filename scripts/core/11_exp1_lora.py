@@ -49,7 +49,7 @@ def main():
     seed = int(config.get("seed", 42))
     set_seed(seed)
 
-    output_dir = config.get("output_dir", "outputs/exp1_lora_label")
+    output_dir = config.get("output_dir", "outputs/exp1_lora")
     ensure_dir(output_dir)
 
     # 1) load base model & tokenizer
@@ -67,7 +67,7 @@ def main():
 
     print_trainable_params(model)
 
-    # 4) optimizer (只优化 requires_grad 参数)
+    # 4) optimizer
     train_cfg = config.get("train", {})
     lr = float(train_cfg.get("lr", 1e-4))
     weight_decay = float(train_cfg.get("weight_decay", 0.0))
@@ -108,10 +108,8 @@ def main():
 
             loop.set_postfix(loss=loss.item())
 
-        # epoch end eval
         val_metrics = evaluate(model, val_loader, config)
 
-        # 分类任务用 accuracy 选最优
         score = val_metrics.get("accuracy", -1.0)
 
         if score > best_metric:
@@ -121,7 +119,6 @@ def main():
         train_loss = total_loss / max(total_examples, 1)
         print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val={val_metrics}")
 
-    # restore best
     if best_state is not None:
         model.load_state_dict(best_state)
 
@@ -144,7 +141,6 @@ def main():
     adapter_dir = os.path.join(output_dir, "adapter")
     ensure_dir(adapter_dir)
 
-    # PEFT 标准保存 adapter
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
 
