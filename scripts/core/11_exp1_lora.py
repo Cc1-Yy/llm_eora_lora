@@ -1,3 +1,4 @@
+# scripts/core/11_exp1_lora.py
 from __future__ import annotations
 
 import os
@@ -13,7 +14,7 @@ import yaml
 from torch.optim import AdamW
 from tqdm import tqdm
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -52,10 +53,11 @@ def main():
     output_dir = config.get("output_dir", "outputs/exp1_lora")
     ensure_dir(output_dir)
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print("Using device:", device)
+
     # 1) load base model & tokenizer
     base_model, tokenizer = load_base_model_and_tokenizer(config)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
     base_model.to(device)
 
     # 2) dataloaders
@@ -64,10 +66,9 @@ def main():
     # 3) add LoRA
     model = add_lora_to_model(base_model, config)
     model.to(device)
-
     print_trainable_params(model)
 
-    # 4) optimizer
+    # 4) optimizer (only train requires_grad params)
     train_cfg = config.get("train", {})
     lr = float(train_cfg.get("lr", 1e-4))
     weight_decay = float(train_cfg.get("weight_decay", 0.0))
@@ -77,8 +78,8 @@ def main():
     optim_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = AdamW(optim_params, lr=lr, weight_decay=weight_decay)
 
-    # 5) train loop
-    best_metric = -1e9
+    # 5) train loop (select best by val accuracy)
+    best_score = -1e9
     best_state = None
 
     for epoch in range(1, num_epochs + 1):
@@ -86,8 +87,7 @@ def main():
         total_loss = 0.0
         total_examples = 0
 
-        loop = tqdm(train_loader, desc=f"[Exp1 LoRA-Label] Epoch {epoch}/{num_epochs}")
-
+        loop = tqdm(train_loader, desc=f"[Exp1 LoRA] Epoch {epoch}/{num_epochs}")
         for batch in loop:
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -105,19 +105,17 @@ def main():
             bs = batch["input_ids"].size(0)
             total_loss += loss.item() * bs
             total_examples += bs
-
-            loop.set_postfix(loss=loss.item())
-
-        val_metrics = evaluate(model, val_loader, config)
-
-        score = val_metrics.get("accuracy", -1.0)
-
-        if score > best_metric:
-            best_metric = score
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            loop.set_postfix(loss=float(loss.item()))
 
         train_loss = total_loss / max(total_examples, 1)
+
+        val_metrics = evaluate(model, val_loader, config)
+        val_acc = float(val_metrics.get("accuracy", -1.0))
         print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val={val_metrics}")
+
+        if val_acc > best_score:
+            best_score = val_acc
+            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -126,25 +124,28 @@ def main():
     val_metrics = evaluate(model, val_loader, config)
     test_metrics = evaluate(model, test_loader, config)
 
+    # 7) save adapter
+    adapter_dir = os.path.join(output_dir, "adapter")
+    ensure_dir(adapter_dir)
+
+    # PEFT 标准保存 adapter
+    model.save_pretrained(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
+
+    # 8) save metrics/meta
     metrics = {
         "val": val_metrics,
         "test": test_metrics,
         "seed": seed,
         "model_name": config.get("model_name"),
         "task_type": config.get("task_type"),
+        "num_labels": config.get("num_labels"),
         "data": config.get("data", {}),
         "lora": config.get("lora", {}),
         "train": config.get("train", {}),
+        "optimized_model_dir": config.get("optimized_model_dir", None),
     }
 
-    # 7) save adapter
-    adapter_dir = os.path.join(output_dir, "adapter")
-    ensure_dir(adapter_dir)
-
-    model.save_pretrained(adapter_dir)
-    tokenizer.save_pretrained(adapter_dir)
-
-    # 8) save metrics
     with open(os.path.join(output_dir, "metrics.json"), "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
