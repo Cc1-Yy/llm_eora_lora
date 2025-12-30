@@ -1,17 +1,25 @@
 model_name: "gpt2"
-task_type: "causal_lm"
-seed: 42
-output_dir: "outputs/optimized_lm"
+task_type: "lm"
 
 data:
-  dataset_name: "wikitext"
-  dataset_config_name: "wikitext-2-raw-v1"
-  max_length: 128
+  dataset_name: null
+  train_file: "data/wikitext2_like/train.txt"
+  valid_file: "data/wikitext2_like/valid.txt"
+
+  max_length: 256
   batch_size: 8
   num_workers: 0
+
+  use_internal_test: false
 
 train:
   lr: 5e-5
   weight_decay: 0.01
   num_epochs: 3
   grad_clip: 1.0
+  eval_every_steps: 0
+
+output_dir: "outputs/optimized_lm"
+seed: 42
+
+# python scripts/core/01_train_optimized.py --config configs/optimized_lm.yaml

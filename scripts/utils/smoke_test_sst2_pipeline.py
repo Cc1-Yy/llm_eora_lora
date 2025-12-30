@@ -5,8 +5,7 @@ from pathlib import Path
 
 import torch
 
-# ---- Make imports robust no matter where you run this from ----
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -16,16 +15,15 @@ from src.eval_utils import evaluate
 
 
 def main():
-    # 1) 最小分类配置（强烈建议先用它）
     config = {
-        "model_name": "gpt2",  # 你也可以换 roberta-base
+        "model_name": "gpt2",
         "task_type": "classification",
         "num_labels": 2,
         "data": {
             "dataset_name": "glue/sst2",
             "max_length": 128,
             "batch_size": 4,
-            "num_workers": 0,  # Windows 先用 0，稳定后再尝试 2/4
+            "num_workers": 0,
         },
         "seed": 42,
     }
@@ -41,7 +39,6 @@ def main():
     print("val batches:", len(val_loader))
     print("test batches:", len(test_loader))
 
-    # 2) 看一个 batch 结构
     batch = next(iter(train_loader))
     print("\n== Batch keys ==")
     print(batch.keys())
@@ -50,7 +47,6 @@ def main():
     print("labels shape:", batch["labels"].shape)
     print("labels dtype:", batch["labels"].dtype)
 
-    # 3) 放到设备
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("\n== Device ==")
     print("Using device:", device)
@@ -61,8 +57,7 @@ def main():
     metrics = evaluate(model, val_loader, config)
     print("metrics:", metrics)
 
-    # 4) 保存一份输出（可选）
-    out_path = PROJECT_ROOT / "outputs" / "smoke_test_metrics.json"
+    out_path = PROJECT_ROOT / "outputs" / "smoke_test_sst2" / "metrics.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     with out_path.open("w", encoding="utf-8") as f:
