@@ -1,4 +1,3 @@
-# scripts/0_quantize_optimized.py
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -21,15 +20,13 @@ def main():
     config = load_config(args.config)
 
     model_id_or_path = config["optimized_model_dir"]
-    out_dir = config.get("quant_output_dir", "outputs/optimized_gptq_4bit")
+    out_dir = config.get("quant_output_dir")
 
-    # 这份校准数据只需要是“文本列表”
-    # 你现在用 SST-2 也能先跑通；后面建议换更标准的 LM 校准语料
+    # TODO: 换更标准的LM校准语料
     data_cfg = config.get("data", {})
     dataset_name = data_cfg.get("dataset_name", "glue/sst2")
     max_calib = int(config.get("calibration_num_samples", 512))
 
-    # 兼容 glue/sst2 写法
     if "/" in dataset_name:
         d0, d1 = dataset_name.split("/", 1)
         ds = load_dataset(d0, d1)

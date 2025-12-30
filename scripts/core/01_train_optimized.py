@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import yaml
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -47,7 +47,7 @@ def main():
     seed = int(config.get("seed", 42))
     set_seed(seed)
 
-    output_dir = config.get("output_dir", "outputs/optimized_minimal")
+    output_dir = config.get("output_dir")
     ensure_dir(output_dir)
 
     # 1) load model & tokenizer
@@ -90,7 +90,6 @@ def main():
     model_dir = os.path.join(output_dir, "model")
     ensure_dir(model_dir)
 
-    # 用 HF 标准方式保存（之后 EoRA/LoRA 都好对接）
     model.save_pretrained(model_dir)
     tokenizer.save_pretrained(model_dir)
 
@@ -106,3 +105,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # 命令行运行：python scripts/core/01_train_optimized.py --config configs/optimized_minimal.yaml
