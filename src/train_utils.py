@@ -48,10 +48,8 @@ def train_optimized(model, train_loader, val_loader, config: Dict[str, Any], eva
 
         train_loss = total_loss / max(total_examples, 1)
 
-        # 每个 epoch 评估一次
         val_metrics = evaluate_fn(model, val_loader, config)
 
-        # 分类任务用 accuracy 作为 best 指标，否则用 -loss
         if config.get("task_type", "classification") == "classification":
             score = val_metrics.get("accuracy", -1.0)
         else:
@@ -59,12 +57,10 @@ def train_optimized(model, train_loader, val_loader, config: Dict[str, Any], eva
 
         if score > best_metric:
             best_metric = score
-            # 存一份最优权重（内存版）
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
         print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val={val_metrics}")
 
-    # 训练完恢复最优权重
     if best_state is not None:
         model.load_state_dict(best_state)
 

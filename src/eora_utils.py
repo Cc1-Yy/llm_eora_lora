@@ -1,4 +1,3 @@
-# src/eora_utils.py
 from __future__ import annotations
 from typing import Dict, Any, Tuple
 import os
@@ -14,12 +13,9 @@ def _build_calibration_texts(config: Dict[str, Any]):
     dataset_name = data_cfg.get("dataset_name", "glue/sst2")
     n = int(config.get("eora", {}).get("calibration_num_samples", 512))
 
-    # 最小可行：先从任务数据里拿文本
-    # 你后面可以换 C4/WikiText 做更规范的校准集
     if "/" in dataset_name:
         d0, d1 = dataset_name.split("/", 1)
         ds = load_dataset(d0, d1)
-        # SST-2 的文本字段
         text_key = "sentence"
     else:
         ds = load_dataset(dataset_name)
@@ -30,11 +26,6 @@ def _build_calibration_texts(config: Dict[str, Any]):
 
 
 def generate_eora_adapter(config: Dict[str, Any]) -> Lora:
-    """
-    按 GPTQModel 官方方式：
-      - adapter = Lora(path=..., rank=...)
-      - GPTQModel.adapter.generate(...)
-    """
     eora_cfg = config.get("eora", {})
     rank = int(eora_cfg.get("rank", 8))
 
@@ -47,11 +38,8 @@ def generate_eora_adapter(config: Dict[str, Any]) -> Lora:
             "and quantized_model_dir (GPTQ quantized)."
         )
 
-    # 1) 校准文本
     calibration_texts = _build_calibration_texts(config)
 
-    # 2) EoRA adapter 保存路径
-    # 注意：官方就是用 Lora adapter 类来承载 EoRA
     save_path = os.path.join(quantized_model_dir, f"eora_rank{rank}")
 
     eora = Lora(
@@ -59,7 +47,6 @@ def generate_eora_adapter(config: Dict[str, Any]) -> Lora:
         rank=rank,
     )
 
-    # 3) 生成 EoRA
     GPTQModel.adapter.generate(
         adapter=eora,
         model_id_or_path=optimized_model_dir,

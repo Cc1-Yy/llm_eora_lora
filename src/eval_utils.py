@@ -7,11 +7,7 @@ import torch
 
 @torch.no_grad()
 def evaluate(model, dataloader, config: Dict[str, Any]) -> Dict[str, float]:
-    """
-    最小可用评估：
-    - classification: loss + accuracy
-    - causal_lm/seq2seq: 先只返回 loss（你后面再加 ppl/ROUGE 等）
-    """
+
     task_type = config.get("task_type", "classification")
     device = next(model.parameters()).device
 
@@ -23,7 +19,6 @@ def evaluate(model, dataloader, config: Dict[str, Any]) -> Dict[str, float]:
     correct = 0
 
     for batch in dataloader:
-        # batch 里通常有 input_ids/attention_mask/labels
         batch = {k: v.to(device) for k, v in batch.items()}
 
         outputs = model(**batch)
@@ -48,5 +43,4 @@ def evaluate(model, dataloader, config: Dict[str, Any]) -> Dict[str, float]:
         accuracy = correct / max(total_examples, 1)
         return {"loss": float(avg_loss), "accuracy": float(accuracy)}
 
-    # 生成任务先返回 loss（后面你可加 ppl）
     return {"loss": float(avg_loss)}

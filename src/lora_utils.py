@@ -1,4 +1,3 @@
-# src/lora_utils.py
 from __future__ import annotations
 from typing import Dict, Any
 
@@ -21,7 +20,7 @@ def add_lora_to_model(model, config: Dict[str, Any]):
         lora_dropout=dropout,
         target_modules=target_modules,
         bias="none",
-        task_type="SEQ_CLS",  # 你现在是分类任务
+        task_type="SEQ_CLS",
     )
 
     model = get_peft_model(model, peft_config)
