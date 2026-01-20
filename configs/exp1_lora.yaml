@@ -1,6 +1,3 @@
-# configs/exp1_lora.yaml
-# Exp1 - LoRA(label-supervised) branch
-
 model_name: "gpt2"
 task_type: "classification"
 num_labels: 2
@@ -17,7 +14,6 @@ data:
   use_internal_test: true
   internal_test_size: 0.1
 
-# LoRA 超参（先用一套标准的，跑通后再做 rank sweep）
 lora:
   rank: 8
   alpha: 32
@@ -30,5 +26,4 @@ train:
   num_epochs: 3
   grad_clip: 1.0
 
-# 可选：把 teacher 路径写上，方便你后面统一汇总对比（脚本不依赖它也能跑）
 optimized_model_dir: "outputs/optimized_sst2/model"

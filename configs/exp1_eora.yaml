@@ -1,3 +1,7 @@
+# configs/exp1_eora.yaml
+# Exp1 - EoRA branch (NO quantization):
+# base (pretrained) + closed-form low-rank adapter  -> approximate optimized (full fine-tuned)
+
 model_name: "gpt2"
 task_type: "classification"
 num_labels: 2
@@ -5,9 +9,8 @@ num_labels: 2
 seed: 42
 output_dir: "outputs/exp1_eora"
 
-# TODO: 关键输入，根据任务修改
-optimized_model_dir: "outputs/optimized_minimal/model"
-quantized_model_dir: "outputs/optimized_gptq_4bit"
+# 你给定的 optimized 模型路径（teacher）
+optimized_model_dir: "outputs/optimized_sst2/model"
 
 data:
   dataset_name: "glue/sst2"
@@ -18,7 +21,13 @@ data:
   use_internal_test: true
   internal_test_size: 0.1
 
-
+# EoRA（closed-form low-rank delta approximation）参数
 eora:
   rank: 8
-  calibration_num_samples: 512
+  # 建议 alpha = rank => scaling = alpha/rank = 1
+  alpha: 8
+  dropout: 0.0
+  target_modules: ["c_attn", "c_proj"]
+
+  # SVD 是否放 CPU 做（更稳，避免 GPU 显存波动）
+  svd_on_cpu: true
