@@ -37,7 +37,7 @@ def main():
     train_loader, val_loader, test_loader = get_dataloaders(config, tokenizer)
     print("train batches:", len(train_loader))
     print("val batches:", len(val_loader))
-    print("test batches:", len(test_loader))
+    print("test.py batches:", len(test_loader))
 
     batch = next(iter(train_loader))
     print("\n== Batch keys ==")
@@ -63,7 +63,7 @@ def main():
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
-    print(f"\n✅ Smoke test done. Metrics saved to {out_path}")
+    print(f"\n✅ Smoke test.py done. Metrics saved to {out_path}")
 
 
 if __name__ == "__main__":

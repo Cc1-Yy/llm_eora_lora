@@ -57,7 +57,7 @@ def main():
     # 3) 构建 dataloaders（和你训练 optimized 时完全一致）
     train_loader, val_loader, test_loader = get_dataloaders(config, tokenizer)
     print(f"[Data] val batches:  {len(val_loader)}")
-    print(f"[Data] test batches: {len(test_loader)}")
+    print(f"[Data] test.py batches: {len(test_loader)}")
 
     # 4) 加载 Base model（预训练的 gpt2 分类头，未在 SST-2 上训练）
     base_model_name = config.get("model_name", "gpt2")
@@ -73,7 +73,7 @@ def main():
     base_val_metrics = evaluate(base_model, val_loader, config)
     base_test_metrics = evaluate(base_model, test_loader, config)
     print("BASE val:", base_val_metrics)
-    print("BASE test:", base_test_metrics)
+    print("BASE test.py:", base_test_metrics)
 
     # 5) 加载 Optimized model（你训练好的老师模型）
     print(f"\n== Loading OPTIMIZED model from: {args.optimized_model_dir} ==")
@@ -87,7 +87,7 @@ def main():
     opt_val_metrics = evaluate(opt_model, val_loader, config)
     opt_test_metrics = evaluate(opt_model, test_loader, config)
     print("OPTIMIZED val:", opt_val_metrics)
-    print("OPTIMIZED test:", opt_test_metrics)
+    print("OPTIMIZED test.py:", opt_test_metrics)
 
     # 6) 汇总结果并保存成 json，方便后面画图/做表
     results = {
@@ -95,11 +95,11 @@ def main():
         "optimized_model_dir": args.optimized_model_dir,
         "base": {
             "val": base_val_metrics,
-            "test": base_test_metrics,
+            "test.py": base_test_metrics,
         },
         "optimized": {
             "val": opt_val_metrics,
-            "test": opt_test_metrics,
+            "test.py": opt_test_metrics,
         },
     }
 

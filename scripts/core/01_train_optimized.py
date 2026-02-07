@@ -58,9 +58,9 @@ def main():
 
     # 2) dataloaders
     train_loader, val_loader, test_loader = get_dataloaders(config, tokenizer)
-    print("test batches:", len(test_loader))
+    print("test.py batches:", len(test_loader))
     batch = next(iter(test_loader))
-    print("test batch keys:", batch.keys())
+    print("test.py batch keys:", batch.keys())
     print("has labels:", "labels" in batch)
 
     # 3) train optimized
@@ -78,7 +78,7 @@ def main():
 
     metrics = {
         "val": val_metrics,
-        "test": test_metrics,
+        "test.py": test_metrics,
         "seed": seed,
         "model_name": config.get("model_name"),
         "task_type": config.get("task_type"),
