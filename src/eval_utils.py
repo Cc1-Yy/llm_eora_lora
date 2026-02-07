@@ -1,8 +1,10 @@
+# src/eval_utils.py
 from __future__ import annotations
 
 from typing import Dict, Any
 
 import torch
+import math
 
 
 @torch.no_grad()
@@ -42,5 +44,7 @@ def evaluate(model, dataloader, config: Dict[str, Any]) -> Dict[str, float]:
     if task_type == "classification":
         accuracy = correct / max(total_examples, 1)
         return {"loss": float(avg_loss), "accuracy": float(accuracy)}
-
-    return {"loss": float(avg_loss)}
+    else:
+        # causal LM: ppl = exp(loss)
+        ppl = float(math.exp(min(avg_loss, 20.0)))  # 防止溢出
+        return {"loss": float(avg_loss), "ppl": ppl}

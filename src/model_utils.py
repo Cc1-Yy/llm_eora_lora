@@ -1,3 +1,4 @@
+# src/model_utils.py
 from __future__ import annotations
 
 from typing import Tuple, Dict, Any
@@ -17,6 +18,9 @@ def load_base_model_and_tokenizer(config: Dict[str, Any]):
         raise ValueError("config['model_name'] (or base_model_ckpt) is required.")
 
     task_type = config.get("task_type", "classification")
+
+    if task_type == "lm":
+        task_type = "causal_lm"
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
 
