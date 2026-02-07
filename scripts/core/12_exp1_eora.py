@@ -100,7 +100,7 @@ def main():
     with open(os.path.join(output_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    metrics = {"val": val_metrics, "test": test_metrics}
+    metrics = {"val": val_metrics, "test.py": test_metrics}
     with open(os.path.join(output_dir, "metrics.json"), "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 

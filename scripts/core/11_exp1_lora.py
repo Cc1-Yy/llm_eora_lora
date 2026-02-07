@@ -135,7 +135,7 @@ def main():
     # 8) save metrics/meta
     metrics = {
         "val": val_metrics,
-        "test": test_metrics,
+        "test.py": test_metrics,
         "seed": seed,
         "model_name": config.get("model_name"),
         "task_type": config.get("task_type"),
