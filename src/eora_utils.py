@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 import os
+from pathlib import Path
 
 import torch
 from peft import LoraConfig, get_peft_model
+from datasets import load_dataset
+from gptqmodel import GPTQModel
+from gptqmodel.adapter.adapter import Lora
 
 
 def _get_module_by_name(root: torch.nn.Module, name: str) -> torch.nn.Module:
@@ -110,28 +114,25 @@ def apply_eora_to_base(
     # 3) Fill LoRA weights using ΔW low-rank approximation
     # PEFT-wrapped model names are like: base_model.model.transformer.h.0.attn.c_attn
     # We strip "base_model.model." prefix to align with optimized model names.
-    prefix = "base_model.model."
+    # 3) Fill LoRA weights using ΔW low-rank approximation
+    prefixes = ["base_model.model.", "base_model.", "model."]
     adapter_name = "default"
 
     num_filled = 0
     for name, module in eora_model.named_modules():
-        # We only care modules that have LoRA params
         if not hasattr(module, "lora_A") or not hasattr(module, "lora_B"):
             continue
 
-        # Resolve corresponding original layer name
-        if name.startswith(prefix):
-            opt_name = name[len(prefix):]
-        else:
-            opt_name = name
+        opt_name = name
+        for pfx in prefixes:
+            if opt_name.startswith(pfx):
+                opt_name = opt_name[len(pfx):]
+                break
 
         if opt_name not in opt_modules:
-            # Some wrappers introduce extra nodes; skip if not found
             continue
 
         opt_layer = opt_modules[opt_name]
-
-        # PEFT LoRA layers keep the original layer in module.base_layer
         base_layer = getattr(module, "base_layer", None)
         if base_layer is None or not hasattr(base_layer, "weight") or not hasattr(opt_layer, "weight"):
             continue
@@ -139,23 +140,13 @@ def apply_eora_to_base(
         Wb = base_layer.weight.data
         Wo = opt_layer.weight.data
 
-        # We want delta in "effective" [out, in] orientation for LoRA:
-        # - For nn.Linear: weight is [out, in] already.
-        # - For GPT2 Conv1D: weight is stored as [in, out], but PEFT sets fan_in_fan_out=True.
-        #   Effective [out, in] is W^T.
         if _is_gpt2_conv1d(base_layer):
-            delta = (Wo.T - Wb.T).contiguous()   # [out, in]
+            delta = (Wo.T - Wb.T).contiguous()
         else:
-            delta = (Wo - Wb).contiguous()       # [out, in]
+            delta = (Wo - Wb).contiguous()
 
-        # SVD low-rank: delta ≈ B @ A
         B, A = _svd_low_rank(delta, rank=rank, svd_on_cpu=svd_on_cpu)
 
-        # PEFT uses nn.Linear for lora_A and lora_B; their weights are:
-        #   lora_A.weight: [r, in]
-        #   lora_B.weight: [out, r]
-        # Effective delta in [out,in] is (lora_B.weight @ lora_A.weight)
-        # BUT note: nn.Linear computes x @ W^T; PEFT already handles that internally.
         module.lora_A[adapter_name].weight.data.copy_(A)
         module.lora_B[adapter_name].weight.data.copy_(B)
 
@@ -195,3 +186,109 @@ def save_eora_adapter(eora_model: torch.nn.Module, tokenizer, output_dir: str):
         tokenizer.save_pretrained(adapter_dir)
 
     return adapter_dir
+
+
+@torch.no_grad()
+def apply_eora_base_to_optimized(
+    base_model: torch.nn.Module,
+    optimized_model: torch.nn.Module,
+    config: Dict[str, Any],
+) -> torch.nn.Module:
+    # just an alias wrapper for script compatibility
+    return apply_eora_to_base(base_model, optimized_model, config)
+
+
+def _build_calibration_texts(config: Dict[str, Any]) -> List[str]:
+    """
+    EoRA 需要一份“文本列表”作为 calibration_dataset。
+    你可以用:
+      - data/wikitext2_like/train.txt (推荐，稳定不依赖HF下载)
+      - 或 datasets.load_dataset(...) 从 HF 拉
+    """
+    eora_cfg = config.get("eora", {})
+    n = int(eora_cfg.get("calibration_num_samples", 512))
+
+    # 1) 优先用本地文本（避免你遇到的 HF SSL 问题）
+    local_txt = eora_cfg.get("calibration_local_txt", None)
+    if local_txt:
+        p = Path(local_txt)
+        if not p.exists():
+            raise FileNotFoundError(f"calibration_local_txt not found: {p}")
+        texts = []
+        with p.open("r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if s:
+                    texts.append(s)
+                if len(texts) >= n:
+                    break
+        if len(texts) == 0:
+            raise ValueError(f"calibration_local_txt is empty: {p}")
+        return texts
+
+    # 2) 否则用 HF dataset
+    data_cfg = config.get("data", {})
+    dataset_name = data_cfg.get("dataset_name", "glue/sst2")
+
+    if "/" in dataset_name:
+        d0, d1 = dataset_name.split("/", 1)
+        ds = load_dataset(d0, d1)
+        # SST-2 的文本字段
+        text_key = "sentence"
+    else:
+        ds = load_dataset(dataset_name)
+        text_key = "text"
+
+    texts = ds["train"].select(range(n))[text_key]
+    return list(texts)
+
+
+def generate_eora_adapter_for_quantized(config: Dict[str, Any], save_dir: str) -> Lora:
+    """
+    实验3：teacher=optimized(full precision) + student=quantized(GPTQ)
+    生成 EoRA adapter，并保存到 save_dir.
+    """
+    eora_cfg = config.get("eora", {})
+    rank = int(eora_cfg.get("rank", 16))
+
+    optimized_model_dir = config.get("optimized_model_dir")
+    quantized_model_dir = config.get("quantized_model_dir")
+
+    if not optimized_model_dir:
+        raise ValueError("config['optimized_model_dir'] is required.")
+    if not quantized_model_dir:
+        raise ValueError("config['quantized_model_dir'] is required.")
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    calibration_texts = _build_calibration_texts(config)
+
+    eora = Lora(
+        # 注意：官方说明 path 在 generate 时是“保存路径”，load 时也是“读取路径”
+        path=save_dir,
+        rank=rank,
+    )
+
+    # 官方 EoRA workflow: GPTQModel.adapter.generate(...)
+    GPTQModel.adapter.generate(
+        adapter=eora,
+        model_id_or_path=optimized_model_dir,          # teacher (FP)
+        quantized_model_id_or_path=quantized_model_dir,# student (GPTQ)
+        calibration_dataset=calibration_texts,
+        calibration_dataset_concat_size=0,
+        auto_gc=False,
+    )
+
+    return eora
+
+
+def load_quantized_with_eora(config: Dict[str, Any], eora: Lora):
+    """
+    加载量化模型，并挂上 EoRA adapter（推理/评估用）
+    """
+    quantized_model_dir = config["quantized_model_dir"]
+    model = GPTQModel.load(
+        model_id_or_path=quantized_model_dir,
+        adapter=eora,
+    )
+    return model
