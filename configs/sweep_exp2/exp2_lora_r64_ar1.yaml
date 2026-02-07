@@ -1,0 +1,33 @@
+model_name: "gpt2"
+task_type: "classification"
+num_labels: 2
+
+seed: 42
+output_dir: "outputs/exp2_lora/r64_ar1_T1"
+
+optimized_model_dir: "outputs/optimized_sst2/model"
+
+data:
+  dataset_name: "glue/sst2"
+  dataset_config_name: null
+  max_length: 128
+  batch_size: 8
+  num_workers: 0
+  use_internal_test: true
+  internal_test_size: 0.1
+
+lora:
+  rank: 64
+  alpha: 64        # ar = alpha/r = 1.0
+  dropout: 0.1
+  target_modules: ["c_attn", "c_proj"]
+
+train:
+  lr: 1e-4
+  weight_decay: 0.01
+  num_epochs: 3
+  grad_clip: 1.0
+
+distill:
+  temperature: 1.0
+  loss_type: "kl"

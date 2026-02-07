@@ -43,7 +43,7 @@ def main():
     train_loader, val_loader, test_loader = get_dataloaders(config, tokenizer)
     print("train batches:", len(train_loader))
     print("val batches:", len(val_loader))
-    print("test batches:", len(test_loader))
+    print("test.py batches:", len(test_loader))
 
     batch = next(iter(val_loader))
     print("\n== Val batch sample ==")
@@ -92,7 +92,7 @@ def main():
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print(f"\n✅ Quantized smoke test done. Result saved to {out_path}")
+    print(f"\n✅ Quantized smoke test.py done. Result saved to {out_path}")
 
 
 if __name__ == "__main__":

@@ -39,11 +39,11 @@ def parse_r_ar_from_path(path: Path) -> Tuple[Optional[int], Optional[float]]:
 def extract_metrics(metrics_json: Dict[str, Any]) -> Dict[str, Any]:
     """
     Supports your metrics format:
-      {"val": {"loss":..., "accuracy":...}, "test": {...}}
+      {"val": {"loss":..., "accuracy":...}, "test.py": {...}}
     """
     out = {}
     val = metrics_json.get("val", {}) or {}
-    test = metrics_json.get("test", {}) or {}
+    test = metrics_json.get("test.py", {}) or {}
 
     out["val_loss"] = val.get("loss")
     out["val_acc"] = val.get("accuracy")
@@ -148,10 +148,10 @@ def print_console_summary(rows: List[Dict[str, Any]]):
         L = lora_map.get((rk, ar))
         E = eora_map.get((rk, ar))
 
-        Ls = f"LoRA: val={fmt(L['val_acc'])} test={fmt(L['test_acc'])}" if L else "LoRA: NA"
-        Es = f"EoRA: val={fmt(E['val_acc'])} test={fmt(E['test_acc'])}" if E else "EoRA: NA"
+        Ls = f"LoRA: val={fmt(L['val_acc'])} test.py={fmt(L['test_acc'])}" if L else "LoRA: NA"
+        Es = f"EoRA: val={fmt(E['val_acc'])} test.py={fmt(E['test_acc'])}" if E else "EoRA: NA"
 
-        # gap (LoRA - EoRA) on test
+        # gap (LoRA - EoRA) on test.py
         gap = None
         if L and E and L["test_acc"] is not None and E["test_acc"] is not None:
             gap = float(L["test_acc"]) - float(E["test_acc"])
@@ -162,7 +162,7 @@ def print_console_summary(rows: List[Dict[str, Any]]):
     print("\n--- Quick diagnosis hints ---")
     if bL and bE:
         diff = float(bL["test_acc"]) - float(bE["test_acc"])
-        print(f"Best gap (LoRA - EoRA) on test: {fmt(diff)}")
+        print(f"Best gap (LoRA - EoRA) on test.py: {fmt(diff)}")
         if diff < 0.005:
             print("=> EoRA is very close to LoRA. Next: sweep rank upward or try more target modules.")
         elif diff < 0.02:
