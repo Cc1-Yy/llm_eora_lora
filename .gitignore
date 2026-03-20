@@ -31,3 +31,12 @@ __pycache__/
 .idea/
 *.iml
 .vscode/
+/data_cache/
+/optimized/
+/outputs/
+/logs/
+/gptqmodel_offload/
+/configs/archive/
+*.bak
+/optimized/
+/optimized/
