@@ -1,0 +1,33 @@
+model_name: gpt2
+task_type: causal_lm
+seed: 42
+output_dir: outputs/lm/exp1/2_eora_optfull_r128_ar1_tm-apf
+data:
+  train_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: train
+    text_key: text
+  eval_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: validation
+    text_key: text
+  test_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: test
+    text_key: text
+  max_length: 256
+  batch_size: 4
+  num_workers: 0
+  pin_memory: true
+  persistent_workers: false
+  pad_to_multiple_of: 8
+eora:
+  rank: 128
+  alpha: 128
+  dropout: 0.0
+  target_modules:
+  - c_attn
+  - c_proj
+  - c_fc
+  svd_on_cpu: true
+optimized_model_dir: outputs/lm/exp0/optimized_small/model
