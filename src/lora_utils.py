@@ -1,24 +1,28 @@
+# src/lora_utils.py
 from __future__ import annotations
 from typing import Dict, Any
 
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model
+from peft import TaskType
 
 
-def _map_task_type_for_peft(task_type: str) -> TaskType:
+def _infer_peft_task_type(task_type: str) -> TaskType:
     """
-    Map your config task_type -> PEFT TaskType
+    Map your config task_type -> PEFT TaskType.
     """
-    t = (task_type or "").lower()
+    t = (task_type or "classification").lower()
+    if t == "lm":
+        t = "causal_lm"
 
-    # allow aliases
-    if t in ["lm", "causal_lm", "causallm", "language_modeling"]:
-        return TaskType.CAUSAL_LM
-    if t in ["classification", "seq_cls", "sequence_classification", "cls"]:
+    if t == "classification":
         return TaskType.SEQ_CLS
-    if t in ["seq2seq", "seq_2_seq", "seq2seq_lm"]:
+    if t == "causal_lm":
+        return TaskType.CAUSAL_LM
+    if t == "seq2seq":
         return TaskType.SEQ_2_SEQ_LM
 
-    raise ValueError(f"Unknown task_type for PEFT: {task_type}")
+    # fallback: most safe default for GPT-like models
+    return TaskType.CAUSAL_LM
 
 
 def add_lora_to_model(model, config: Dict[str, Any]):
@@ -31,8 +35,7 @@ def add_lora_to_model(model, config: Dict[str, Any]):
     if not target_modules:
         raise ValueError("config['lora']['target_modules'] is required.")
 
-    task_type = config.get("task_type", "classification")
-    peft_task_type = _map_task_type_for_peft(task_type)
+    task_type = _infer_peft_task_type(config.get("task_type", "classification"))
 
     peft_config = LoraConfig(
         r=r,
@@ -40,7 +43,7 @@ def add_lora_to_model(model, config: Dict[str, Any]):
         lora_dropout=dropout,
         target_modules=target_modules,
         bias="none",
-        task_type=peft_task_type,
+        task_type=task_type,
     )
 
     model = get_peft_model(model, peft_config)
