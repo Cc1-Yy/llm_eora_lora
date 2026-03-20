@@ -1,0 +1,27 @@
+model_name: gpt2
+task_type: classification
+num_labels: 2
+seed: 123
+output_dir: outputs/cls/confirm_multiseed/exp1/lora_r16_ar4/seed123
+optimized_model_dir: outputs/cls/exp0/optimized_sst2/model
+data:
+  dataset_name: glue/sst2
+  dataset_config_name: null
+  max_length: 128
+  batch_size: 8
+  num_workers: 0
+  use_internal_test: true
+  internal_test_size: 0.1
+  split_seed: 42
+lora:
+  rank: 16
+  alpha: 64
+  dropout: 0.1
+  target_modules:
+  - c_attn
+  - c_proj
+train:
+  lr: 1e-4
+  weight_decay: 0.01
+  num_epochs: 3
+  grad_clip: 1.0
