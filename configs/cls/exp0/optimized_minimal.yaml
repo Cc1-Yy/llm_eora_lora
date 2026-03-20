@@ -1,22 +1,20 @@
-model_name: "gpt2"
-task_type: "classification"
+model_name: gpt2
+task_type: classification
 num_labels: 2
-
 data:
-  dataset_name: "glue/sst2"
+  dataset_name: glue/sst2
   dataset_config_name: null
   max_length: 128
   batch_size: 8
   num_workers: 0
   use_internal_test: true
   internal_test_size: 0.1
-
+  split_seed: 42
 train:
   lr: 2e-5
   weight_decay: 0.01
   num_epochs: 3
   grad_clip: 1.0
   eval_every_steps: 0
-
-output_dir: "outputs/optimized_minimal"
+output_dir: outputs/cls/exp0/optimized_minimal
 seed: 42

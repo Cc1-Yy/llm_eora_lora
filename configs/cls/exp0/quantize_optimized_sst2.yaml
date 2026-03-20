@@ -1,0 +1,7 @@
+optimized_model_dir: outputs/optimized_sst2/model
+quant_output_dir: outputs/quantize_optimized_sst2
+data:
+  dataset_name: glue/sst2
+  split_seed: 42
+calibration_num_samples: 2048
+output_dir: outputs/cls/exp0/quantize_optimized_sst2

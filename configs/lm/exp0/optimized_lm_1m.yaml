@@ -1,0 +1,50 @@
+model_name: "gpt2"
+task_type: "causal_lm"
+seed: 42
+output_dir: "outputs/lm/exp0/optimized_lm_1m"
+
+data:
+  train_corpus:
+    name: "allenai/c4"
+    config: "en"
+    split: "train"
+    streaming: true
+    max_train_samples: 1000000
+    text_key: "text"
+    shuffle_buffer: 20000
+
+  eval_corpus:
+    local_disk_path: "data_cache/wikitext2_raw"
+    split: "validation"
+    text_key: "text"
+
+  test_corpus:
+    local_disk_path: "data_cache/wikitext2_raw"
+    split: "test"
+    text_key: "text"
+
+  # 1M run: still keep length moderate for speed
+  max_length: 512
+  batch_size: 2
+  num_workers: 2
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  pad_to_multiple_of: 8
+
+train:
+  lr: 2e-5
+  weight_decay: 0.01
+  num_epochs: 1
+  grad_clip: 1.0
+
+  use_amp: true
+  grad_accum_steps: 1
+
+  # IMPORTANT: streaming => you control the budget by steps
+  # If you really want "roughly 1M samples", just raise steps gradually.
+  max_train_steps: 50000
+
+  warmup_ratio: 0.03
+  log_every_steps: 50
+  eval_every_steps: 2000
