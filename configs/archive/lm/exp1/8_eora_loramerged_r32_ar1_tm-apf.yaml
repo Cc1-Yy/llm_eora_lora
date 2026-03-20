@@ -1,0 +1,5 @@
+output_dir: outputs/lm/exp1/8_eora_loramerged_r32_ar1_tm-apf
+optimized_model_dir: outputs/lm/exp1/8_teacher_lora_r32_ar1_tm-apf_steps12000/model
+eora:
+  rank: 32
+  alpha: 32
