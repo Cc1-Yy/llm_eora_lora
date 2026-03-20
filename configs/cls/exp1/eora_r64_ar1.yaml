@@ -1,0 +1,23 @@
+model_name: gpt2
+task_type: classification
+num_labels: 2
+seed: 42
+output_dir: outputs/cls/exp1/eora_r64_ar1
+optimized_model_dir: outputs/cls/exp0/optimized_sst2/model
+data:
+  dataset_name: glue/sst2
+  dataset_config_name: null
+  max_length: 128
+  batch_size: 8
+  num_workers: 0
+  use_internal_test: true
+  internal_test_size: 0.1
+  split_seed: 42
+eora:
+  rank: 64
+  alpha: 64
+  dropout: 0.0
+  target_modules:
+  - c_attn
+  - c_proj
+  svd_on_cpu: true

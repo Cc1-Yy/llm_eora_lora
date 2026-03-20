@@ -1,10 +1,11 @@
+# scripts/core/22_exp2_eora.py
 from __future__ import annotations
 
 import os
 import sys
 import json
 import argparse
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import torch
 import torch.nn.functional as F
@@ -26,6 +27,98 @@ def load_config(path: str) -> Dict[str, Any]:
 
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
+
+
+def _collect_score_leaf_modules(score_module: torch.nn.Module) -> List[torch.nn.Module]:
+    """
+    Collect all possible leaf modules that may actually hold the classification head weights.
+
+    Supports:
+      1) plain nn.Linear-like module with .weight
+      2) PEFT ModulesToSaveWrapper.original_module
+      3) PEFT ModulesToSaveWrapper.modules_to_save[...]
+    """
+    leaves: List[torch.nn.Module] = []
+
+    if score_module is None:
+        return leaves
+
+    # Case 1: plain module itself has weights
+    if hasattr(score_module, "weight") and getattr(score_module, "weight", None) is not None:
+        leaves.append(score_module)
+
+    # Case 2: wrapped original module
+    if hasattr(score_module, "original_module"):
+        orig = getattr(score_module, "original_module")
+        if orig is not None and hasattr(orig, "weight") and getattr(orig, "weight", None) is not None:
+            leaves.append(orig)
+
+    # Case 3: modules_to_save (often a ModuleDict)
+    if hasattr(score_module, "modules_to_save"):
+        mts = getattr(score_module, "modules_to_save")
+        if mts is not None:
+            if hasattr(mts, "values"):
+                for mod in mts.values():
+                    if hasattr(mod, "weight") and getattr(mod, "weight", None) is not None:
+                        leaves.append(mod)
+            elif isinstance(mts, dict):
+                for mod in mts.values():
+                    if hasattr(mod, "weight") and getattr(mod, "weight", None) is not None:
+                        leaves.append(mod)
+
+    # de-duplicate by object id
+    uniq = []
+    seen = set()
+    for m in leaves:
+        if id(m) not in seen:
+            uniq.append(m)
+            seen.add(id(m))
+    return uniq
+
+
+def maybe_copy_classification_head(student: torch.nn.Module, teacher: torch.nn.Module) -> bool:
+    """
+    For sequence classification, copy the trained task head from teacher
+    so Exp2 compares low-rank approximation rather than a random classification head.
+    """
+    if not hasattr(student, "score") or not hasattr(teacher, "score"):
+        print("[Info] score head not found on one side; skip head copy.")
+        return False
+
+    src_candidates = _collect_score_leaf_modules(teacher.score)
+    dst_candidates = _collect_score_leaf_modules(student.score)
+
+    if not src_candidates:
+        print("[Warn] Teacher score head exists but no weight-bearing submodule was found.")
+        return False
+    if not dst_candidates:
+        print("[Warn] Student score head exists but no weight-bearing submodule was found.")
+        return False
+
+    src = src_candidates[0]
+    copied_any = False
+
+    try:
+        with torch.no_grad():
+            for dst in dst_candidates:
+                if hasattr(dst, "weight") and dst.weight is not None:
+                    dst.weight.copy_(src.weight.detach().to(dst.weight.device, dtype=dst.weight.dtype))
+                    copied_any = True
+
+                src_bias = getattr(src, "bias", None)
+                dst_bias = getattr(dst, "bias", None)
+                if src_bias is not None and dst_bias is not None:
+                    dst_bias.copy_(src_bias.detach().to(dst_bias.device, dtype=dst_bias.dtype))
+
+        if copied_any:
+            return True
+
+        print("[Warn] Head copy attempted but no destination weight was matched.")
+        return False
+
+    except Exception as e:
+        print(f"[Warn] Failed to copy classification head from teacher: {e}")
+        return False
 
 
 @torch.no_grad()
@@ -106,6 +199,13 @@ def main():
 
     eora_model.to(device)
     teacher.to(device)
+    eora_model.eval()
+    teacher.eval()
+
+    # copy trained classification head from teacher for fair output-matching comparison
+    copied_head = maybe_copy_classification_head(eora_model, teacher)
+    if copied_head:
+        print("[EoRA] Copied classification head from teacher.")
 
     temperature = float(cfg.get("distill", {}).get("temperature", 1.0))
 
@@ -118,14 +218,16 @@ def main():
         "optimized_model_dir": cfg.get("optimized_model_dir"),
         "eora": cfg.get("eora", {}),
         "distill": cfg.get("distill", {}),
+        "copied_classification_head": copied_head,
         "val": val_metrics,
-        "test.py": test_metrics,
+        "test": test_metrics,
     }
 
     with open(os.path.join(output_dir, "metrics.json"), "w", encoding="utf-8") as f:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
     print("=== Exp2 EoRA(output-matching eval) done ===")
+    print("Copied classification head:", copied_head)
     print("Val metrics:", val_metrics)
     print("Test metrics:", test_metrics)
     print("Saved to:", output_dir)
