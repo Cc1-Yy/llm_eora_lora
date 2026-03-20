@@ -1,0 +1,58 @@
+model_name: gpt2
+task_type: causal_lm
+seed: 42
+
+output_dir: outputs/lm/exp2/test_lora_kd_r32_ar1_tm-apfh
+run_name: r32_ar1
+teacher_model_dir: outputs/lm/exp0/optimized_small/model
+
+select_best_by: kl_to_teacher
+
+data:
+  train_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: train
+    text_key: text
+  eval_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: validation
+    text_key: text
+  test_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: test
+    text_key: text
+  max_length: 256
+  batch_size: 4
+  num_workers: 0
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 2
+  pad_to_multiple_of: 8
+
+lora:
+  rank: 32
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - c_attn
+    - c_proj
+    - c_fc
+    - lm_head
+
+train:
+  lr: 1.5e-05
+  weight_decay: 0.01
+  num_epochs: 3
+  grad_clip: 1.0
+  max_train_steps: 6000
+  use_amp: true
+  grad_accum_steps: 2
+  warmup_ratio: 0.03
+  log_every_steps: 50
+  eval_every_steps: 1000
+
+kd:
+  T: 1.0
+  lambda: 1.0
+  sup_lambda: 0.0
+  loss: kl
