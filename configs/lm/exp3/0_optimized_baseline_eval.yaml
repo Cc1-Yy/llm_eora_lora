@@ -1,0 +1,29 @@
+model_name: outputs/lm/exp0/optimized_small/model
+tokenizer_name: outputs/lm/exp0/optimized_small/model
+task_type: causal_lm
+seed: 42
+
+output_dir: outputs/lm/exp3/0_optimized_baseline_eval
+
+optimized_model_dir: outputs/lm/exp0/optimized_small/model
+
+data:
+  train_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: train
+    text_key: text
+  eval_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: validation
+    text_key: text
+  test_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: test
+    text_key: text
+  max_length: 256
+  batch_size: 4
+  num_workers: 0
+  pin_memory: true
+  persistent_workers: false
+  prefetch_factor: 2
+  pad_to_multiple_of: 8
