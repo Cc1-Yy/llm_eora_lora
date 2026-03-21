@@ -1,8 +1,13 @@
 model_name: gpt2
 task_type: causal_lm
 seed: 42
-output_dir: outputs/lm/exp2/test_eora_r32_ar1_tm-apfh
-optimized_model_dir: outputs/lm/exp0/optimized_small/model
+
+output_dir: outputs/lm/exp2/1_lora_kd_r64_ar1_tm-apfh
+run_name: r64_ar1
+
+teacher_model_dir: outputs/lm/exp0/optimized_small/model
+
+select_best_by: kl_to_teacher
 
 data:
   train_corpus:
@@ -25,16 +30,15 @@ data:
   prefetch_factor: 2
   pad_to_multiple_of: 8
 
-eora:
-  rank: 32
-  alpha: 32
-  dropout: 0.0
+lora:
+  rank: 64
+  alpha: 64
+  dropout: 0.05
   target_modules:
     - c_attn
     - c_proj
     - c_fc
     - lm_head
-  svd_on_cpu: true
 
 train:
   lr: 1.5e-05
@@ -48,3 +52,9 @@ train:
   scheduler: linear
   log_every_steps: 50
   eval_every_steps: 1000
+
+kd:
+  T: 1.0
+  lambda: 1.0
+  sup_lambda: 0.0
+  loss: kl
