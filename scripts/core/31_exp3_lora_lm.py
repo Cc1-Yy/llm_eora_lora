@@ -384,8 +384,10 @@ def main():
     # For non-quantized fallback runs, moving to device is fine.
     # For GPTQ quantized backbones, weights are usually already placed correctly.
     is_quantized_backbone = quantized_model_dir is not None
-    if not is_quantized_backbone:
-        base_model.to(device)
+
+    # 当前这条 LoRA 路线已经改成 Transformers 的 from_pretrained() 加载 GPTQ，
+    # 因此这里也需要显式搬到 device。
+    base_model.to(device)
 
     # --------------------------------------------------------
     # 2) Dataloaders
@@ -412,8 +414,7 @@ def main():
 
     # Newly created LoRA params are typically created on the target module device.
     # For non-quantized fallback, .to(device) is safe.
-    if not is_quantized_backbone:
-        model.to(device)
+    model.to(device)
 
     # --------------------------------------------------------
     # 4) Teacher for alignment eval

@@ -3,7 +3,7 @@ tokenizer_name: outputs/lm/exp0/optimized_small/model
 task_type: causal_lm
 seed: 42
 
-output_dir: outputs/lm/exp3/1_lora_recover_q4_r16_ar1_tm-ap_smoke
+output_dir: outputs/lm/exp3/1_lora_recover_q4_r16_ar1_tm-ap
 
 optimized_model_dir: outputs/lm/exp0/optimized_small/model
 quantized_model_dir: outputs/lm/exp0/quantized_optimized_small_gptq4
@@ -42,7 +42,7 @@ train:
   weight_decay: 0.01
   num_epochs: 3
   grad_clip: 1.0
-  max_train_steps: 200
+  max_train_steps: 6000
   use_amp: true
   grad_accum_steps: 2
   warmup_ratio: 0.03

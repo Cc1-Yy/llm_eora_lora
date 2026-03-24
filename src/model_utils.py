@@ -81,18 +81,10 @@ def load_base_model_and_tokenizer(config: Dict[str, Any]):
         )
 
     elif task_type == "causal_lm":
-        # IMPORTANT:
-        # For local GPTQ checkpoints, bypass transformers->optimum GPTQ loader
-        # and use GPTQModel directly.
-        if _is_gptq_quantized_dir(model_name):
-            from gptqmodel import GPTQModel
-
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-            # GPTQModel's own loading path is the safer route here.
-            model = GPTQModel.from_quantized(model_name, device=device)
-        else:
-            model = AutoModelForCausalLM.from_pretrained(model_name)
+        # For LoRA / PEFT training on GPTQ checkpoints, prefer the Transformers
+        # loading path instead of GPTQModel.from_quantized().
+        # This is closer to the PEFT-documented GPTQ workflow.
+        model = AutoModelForCausalLM.from_pretrained(model_name)
 
     elif task_type == "seq2seq":
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
