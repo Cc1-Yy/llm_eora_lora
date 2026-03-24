@@ -652,7 +652,8 @@ def main():
     alpha = float(eora_cfg.get("alpha", rank))  # kept for bookkeeping / run naming
     concat_size = int(eora_cfg.get("calibration_dataset_concat_size", 0))
     repair_orientation = bool(eora_cfg.get("repair_adapter_orientation", True))
-
+    target_modules = eora_cfg.get("target_modules", None)
+    print("requested target_modules:", target_modules)
     calibration_texts = _build_calibration_texts_from_cfg(cfg)
 
     print("=== Exp3 EoRA-LM (quantized recovery) ===")
