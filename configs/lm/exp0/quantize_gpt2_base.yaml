@@ -1,8 +1,0 @@
-optimized_model_dir: "gpt2"
-quant_output_dir: "outputs/lm/exp0/gpt2_gptq_4bit"
-
-data:
-  dataset_name: "glue/sst2"
-  dataset_config_name: null
-
-calibration_num_samples: 512

@@ -3,7 +3,7 @@ tokenizer_name: outputs/lm/exp0/optimized_small/model
 task_type: causal_lm
 seed: 42
 
-output_dir: outputs/lm/exp3/1_lora_recover_q4_r16_ar1_tm-ap
+output_dir: outputs/lm/exp3/1_lora_recover_q4_r32_ar1_tm-ap
 
 optimized_model_dir: outputs/lm/exp0/optimized_small/model
 quantized_model_dir: outputs/lm/exp0/quantized_optimized_small_gptq4
@@ -30,8 +30,8 @@ data:
   pad_to_multiple_of: 8
 
 lora:
-  rank: 16
-  alpha: 16
+  rank: 32
+  alpha: 32
   dropout: 0.05
   target_modules:
     - c_attn

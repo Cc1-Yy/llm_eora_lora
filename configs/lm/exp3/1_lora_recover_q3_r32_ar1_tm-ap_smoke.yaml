@@ -1,12 +1,12 @@
-model_name: outputs/lm/exp0/quantized_optimized_small_gptq4
+model_name: outputs/lm/exp0/quantize_optimized_lm_small_3bit
 tokenizer_name: outputs/lm/exp0/optimized_small/model
 task_type: causal_lm
 seed: 42
 
-output_dir: outputs/lm/exp3/1_lora_recover_q4_r16_ar1_tm-ap
+output_dir: outputs/lm/exp3/1_lora_recover_q3_r32_ar1_tm-ap_smoke
 
 optimized_model_dir: outputs/lm/exp0/optimized_small/model
-quantized_model_dir: outputs/lm/exp0/quantized_optimized_small_gptq4
+quantized_model_dir: outputs/lm/exp0/quantize_optimized_lm_small_3bit
 
 data:
   train_corpus:
@@ -30,8 +30,8 @@ data:
   pad_to_multiple_of: 8
 
 lora:
-  rank: 16
-  alpha: 16
+  rank: 32
+  alpha: 32
   dropout: 0.05
   target_modules:
     - c_attn
@@ -42,7 +42,7 @@ train:
   weight_decay: 0.01
   num_epochs: 3
   grad_clip: 1.0
-  max_train_steps: 3000
+  max_train_steps: 200
   use_amp: true
   grad_accum_steps: 2
   warmup_ratio: 0.03

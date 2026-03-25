@@ -1,0 +1,20 @@
+model_name: gpt2
+task_type: causal_lm
+seed: 42
+
+optimized_model_dir: outputs/lm/exp0/optimized_small/model
+quant_output_dir: outputs/lm/exp0/quantize_optimized_lm_small_3bit
+
+data:
+  train_corpus:
+    local_disk_path: data_cache/wikitext2_raw
+    split: train
+    text_key: text
+
+calibration_num_samples: 512
+calibration_batch_size: 1
+
+quantization:
+  bits: 3
+  group_size: 128
+  desc_act: false
