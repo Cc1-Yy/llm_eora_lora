@@ -62,13 +62,55 @@ def extract_metrics(metrics_json: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def load_teacher_test_acc(path: Path) -> Optional[float]:
+def load_teacher_metrics(path: Path) -> Dict[str, Any]:
     js = safe_read_json(path)
     if not js:
-        return None
+        return {}
+
     test = js.get("test", {}) or js.get("test.py", {}) or {}
-    acc = test.get("accuracy")
-    return float(acc) if acc is not None else None
+    val = js.get("val", {}) or {}
+
+    return {
+        "teacher_val_loss": val.get("loss"),
+        "teacher_val_acc": val.get("accuracy"),
+        "teacher_test_loss": test.get("loss"),
+        "teacher_test_acc": test.get("accuracy"),
+        "teacher_seed": js.get("seed"),
+        "teacher_model_name": js.get("model_name"),
+        "teacher_task_type": js.get("task_type"),
+    }
+
+
+def maybe_extract_alpha(metrics_json: Dict[str, Any], rank: Optional[int], alpha_over_r: Optional[float], branch: Optional[str]) -> Optional[float]:
+    cfg_key = None
+    if branch == "LoRA":
+        cfg_key = "lora"
+    elif branch == "EoRA":
+        cfg_key = "eora"
+
+    if cfg_key is not None:
+        cfg = metrics_json.get(cfg_key, {}) or {}
+        alpha = cfg.get("alpha")
+        if alpha is not None:
+            try:
+                return float(alpha)
+            except Exception:
+                pass
+
+    if rank is not None and alpha_over_r is not None:
+        try:
+            return float(rank) * float(alpha_over_r)
+        except Exception:
+            return None
+
+    return None
+
+
+def safe_relpath(path: Path, base: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(base.resolve())).replace("\\", "/")
+    except Exception:
+        return str(path.resolve()).replace("\\", "/")
 
 
 def scan_exp1(root: Path, teacher_test_acc: Optional[float]) -> List[Dict[str, Any]]:
@@ -93,14 +135,24 @@ def scan_exp1(root: Path, teacher_test_acc: Optional[float]) -> List[Dict[str, A
         if r is None or ar is None:
             r, ar = parse_r_ar(run_name)
 
-        seed = parse_seed(exp_name)
+        seed = metrics_json.get("seed")
+        if seed is None:
+            seed = parse_seed(exp_name)
         if seed is None:
             seed = parse_seed(run_name)
+        if seed is None:
+            meta_json = safe_read_json(run_dir / "meta.json")
+            if meta_json:
+                seed = meta_json.get("seed")
 
         m = extract_metrics(metrics_json)
-        gap = None
+        alpha = maybe_extract_alpha(metrics_json, r, ar, branch)
+
+        test_minus_teacher = None
+        teacher_minus_test = None
         if teacher_test_acc is not None and m["test_acc"] is not None:
-            gap = float(m["test_acc"]) - float(teacher_test_acc)
+            test_minus_teacher = float(m["test_acc"]) - float(teacher_test_acc)
+            teacher_minus_test = float(teacher_test_acc) - float(m["test_acc"])
 
         row = {
             "branch": branch,
@@ -108,24 +160,77 @@ def scan_exp1(root: Path, teacher_test_acc: Optional[float]) -> List[Dict[str, A
             "run_name": run_name,
             "seed": seed,
             "rank": r,
+            "alpha": alpha,
             "alpha_over_r": ar,
             "val_acc": m["val_acc"],
             "val_loss": m["val_loss"],
             "test_acc": m["test_acc"],
             "test_loss": m["test_loss"],
-            "test_gap_to_teacher": gap,
-            "run_dir": str(run_dir.resolve().relative_to(PROJECT_ROOT.resolve())).replace("\\", "/"),
+            "teacher_test_acc": teacher_test_acc,
+            "test_minus_teacher": test_minus_teacher,
+            "teacher_minus_test": teacher_minus_test,
+            "task_type": metrics_json.get("task_type"),
+            "num_labels": metrics_json.get("num_labels"),
+            "model_name": metrics_json.get("model_name"),
+            "optimized_model_dir": metrics_json.get("optimized_model_dir"),
+            "run_dir": safe_relpath(run_dir, PROJECT_ROOT),
         }
         rows.append(row)
 
     return rows
 
 
+def build_teacher_row(teacher_metrics: Dict[str, Any], teacher_metrics_path: Path) -> Optional[Dict[str, Any]]:
+    if not teacher_metrics:
+        return None
+
+    if teacher_metrics.get("teacher_test_acc") is None:
+        return None
+
+    return {
+        "branch": "Teacher",
+        "exp_name": "optimized_model",
+        "run_name": "optimized_model",
+        "seed": teacher_metrics.get("teacher_seed"),
+        "rank": None,
+        "alpha": None,
+        "alpha_over_r": None,
+        "val_acc": teacher_metrics.get("teacher_val_acc"),
+        "val_loss": teacher_metrics.get("teacher_val_loss"),
+        "test_acc": teacher_metrics.get("teacher_test_acc"),
+        "test_loss": teacher_metrics.get("teacher_test_loss"),
+        "teacher_test_acc": teacher_metrics.get("teacher_test_acc"),
+        "test_minus_teacher": 0.0,
+        "teacher_minus_test": 0.0,
+        "task_type": teacher_metrics.get("teacher_task_type"),
+        "num_labels": None,
+        "model_name": teacher_metrics.get("teacher_model_name"),
+        "optimized_model_dir": None,
+        "run_dir": safe_relpath(teacher_metrics_path.parent, PROJECT_ROOT),
+    }
+
+
 def write_csv(rows: List[Dict[str, Any]], out_path: Path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     keys = [
-        "branch", "exp_name", "run_name", "seed", "rank", "alpha_over_r",
-        "val_acc", "val_loss", "test_acc", "test_loss", "test_gap_to_teacher",
+        "branch",
+        "exp_name",
+        "run_name",
+        "seed",
+        "rank",
+        "alpha",
+        "alpha_over_r",
+        "val_acc",
+        "val_loss",
+        "test_acc",
+        "test_loss",
+        "teacher_test_acc",
+        "test_minus_teacher",
+        "teacher_minus_test",
+        "task_type",
+        "num_labels",
+        "model_name",
+        "optimized_model_dir",
         "run_dir",
     ]
     with out_path.open("w", newline="", encoding="utf-8") as f:
@@ -156,8 +261,9 @@ def mean_std(xs: List[float]) -> Tuple[Optional[float], Optional[float]]:
 
 
 def print_console_summary(rows: List[Dict[str, Any]], teacher_test_acc: Optional[float], root: Path):
-    lora = [r for r in rows if r["branch"] == "LoRA"]
-    eora = [r for r in rows if r["branch"] == "EoRA"]
+    exp_rows = [r for r in rows if r["branch"] in {"LoRA", "EoRA"}]
+    lora = [r for r in exp_rows if r["branch"] == "LoRA"]
+    eora = [r for r in exp_rows if r["branch"] == "EoRA"]
 
     def best_of(branch_rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         ok = [r for r in branch_rows if r["test_acc"] is not None]
@@ -175,34 +281,43 @@ def print_console_summary(rows: List[Dict[str, Any]], teacher_test_acc: Optional
 
     if bL:
         print(
-            f"[BEST LoRA]  {bL['exp_name']}  seed={bL['seed']}  rank={bL['rank']}  ar={bL['alpha_over_r']}"
-            f"  test_acc={fmt(bL['test_acc'])}  gap={fmt(bL['test_gap_to_teacher'])}"
+            f"[BEST LoRA]  {bL['exp_name']}  seed={bL['seed']}  rank={bL['rank']}  "
+            f"alpha={fmt(bL['alpha'])}  ar={bL['alpha_over_r']}  "
+            f"test_acc={fmt(bL['test_acc'])}  teacher_minus_test={fmt(bL['teacher_minus_test'])}"
         )
     else:
         print("[BEST LoRA]  NA")
 
     if bE:
         print(
-            f"[BEST EoRA]  {bE['exp_name']}  seed={bE['seed']}  rank={bE['rank']}  ar={bE['alpha_over_r']}"
-            f"  test_acc={fmt(bE['test_acc'])}  gap={fmt(bE['test_gap_to_teacher'])}"
+            f"[BEST EoRA]  {bE['exp_name']}  seed={bE['seed']}  rank={bE['rank']}  "
+            f"alpha={fmt(bE['alpha'])}  ar={bE['alpha_over_r']}  "
+            f"test_acc={fmt(bE['test_acc'])}  teacher_minus_test={fmt(bE['teacher_minus_test'])}"
         )
     else:
         print("[BEST EoRA]  NA")
 
     grouped = defaultdict(list)
-    for r in rows:
+    for r in exp_rows:
         grouped[(r["branch"], r["rank"], r["alpha_over_r"])].append(r)
 
     print("\n--- Aggregated by (branch, rank, alpha/r) ---")
-    keys = sorted(grouped.keys(), key=lambda x: (x[0], x[1] if x[1] is not None else 10**9, x[2] if x[2] is not None else 10**9))
+    keys = sorted(
+        grouped.keys(),
+        key=lambda x: (
+            x[0],
+            x[1] if x[1] is not None else 10**9,
+            x[2] if x[2] is not None else 10**9,
+        ),
+    )
     for k in keys:
         rs = grouped[k]
         mu_acc, sd_acc = mean_std([r["test_acc"] for r in rs])
-        mu_gap, sd_gap = mean_std([r["test_gap_to_teacher"] for r in rs])
+        mu_gap, sd_gap = mean_std([r["teacher_minus_test"] for r in rs])
         print(
             f"{k[0]:4s}  r={k[1]}  ar={k[2]}  "
             f"n={len(rs)}  test_acc={fmt(mu_acc)}±{fmt(sd_acc)}  "
-            f"gap={fmt(mu_gap)}±{fmt(sd_gap)}"
+            f"teacher_minus_test={fmt(mu_gap)}±{fmt(sd_gap)}"
         )
 
     print("\n=============================================\n")
@@ -213,21 +328,36 @@ def main():
     ap.add_argument("--root", type=str, default=str(DEFAULT_EXP1_ROOT))
     ap.add_argument("--out_csv", type=str, default=str(DEFAULT_SUMMARY_CSV))
     ap.add_argument("--teacher_metrics", type=str, default=str(DEFAULT_TEACHER_METRICS))
+    ap.add_argument("--include_teacher_row", action="store_true")
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
     out_csv = Path(args.out_csv).resolve()
-    teacher_metrics = Path(args.teacher_metrics).resolve()
+    teacher_metrics_path = Path(args.teacher_metrics).resolve()
 
-    teacher_test_acc = load_teacher_test_acc(teacher_metrics)
+    teacher_metrics = load_teacher_metrics(teacher_metrics_path)
+    teacher_test_acc = teacher_metrics.get("teacher_test_acc")
 
     rows = scan_exp1(root, teacher_test_acc)
 
+    if args.include_teacher_row:
+        teacher_row = build_teacher_row(teacher_metrics, teacher_metrics_path)
+        if teacher_row is not None:
+            rows.append(teacher_row)
+
     def sort_key(r):
-        rk = r["rank"] if r["rank"] is not None else 10**9
-        ar = r["alpha_over_r"] if r["alpha_over_r"] is not None else 10**9
+        branch_order = {"Teacher": 0, "LoRA": 1, "EoRA": 2}
+        rk = r["rank"] if r["rank"] is not None else -1
+        ar = r["alpha_over_r"] if r["alpha_over_r"] is not None else -1
         sd = r["seed"] if r["seed"] is not None else -1
-        return (r["branch"], rk, ar, sd, r["exp_name"], r["run_name"])
+        return (
+            branch_order.get(r["branch"], 99),
+            rk,
+            ar,
+            sd,
+            r["exp_name"],
+            r["run_name"],
+        )
 
     rows = sorted(rows, key=sort_key)
     write_csv(rows, out_csv)
