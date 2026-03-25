@@ -213,6 +213,22 @@ def _disable_use_cache(model):
             obj.config.use_cache = False
 
 
+def disable_triton_dequant_if_present(model):
+    """
+    Disable Triton dequant path for GPTQ layers when it is unstable
+    (notably some 3-bit checkpoints) and force the fallback path.
+    """
+    n = 0
+    for _, m in model.named_modules():
+        if hasattr(m, "_triton_dequant_enabled"):
+            try:
+                m._triton_dequant_enabled = False
+                n += 1
+            except Exception:
+                pass
+    print(f"[Patch] Disabled Triton dequant on {n} modules.")
+
+
 # ============================================================
 # Eval helpers (token-weighted LM + teacher alignment)
 # ============================================================
@@ -415,6 +431,9 @@ def main():
     # Newly created LoRA params are typically created on the target module device.
     # For non-quantized fallback, .to(device) is safe.
     model.to(device)
+
+    # Disable Triton dequant for problematic GPTQ eval/train cases (notably some 3-bit runs)
+    disable_triton_dequant_if_present(model)
 
     # --------------------------------------------------------
     # 4) Teacher for alignment eval
@@ -659,6 +678,7 @@ def main():
             "This run trains LoRA on top of a quantized GPTQ backbone when quantized_model_dir/model_name points to a GPTQ directory.",
             "Task metrics are token-weighted loss/ppl; alignment metrics are KL and logits-MSE to the optimized teacher.",
             "For first verification, use a small max_train_steps smoke test before launching full runs.",
+            "Triton dequant is disabled after loading the LoRA model when available, to avoid unstable 3-bit eval paths.",
         ],
     }
     save_json(meta, os.path.join(run_dir, "meta.json"))

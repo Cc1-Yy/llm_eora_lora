@@ -85,6 +85,23 @@ def _set_eval_mode(model_or_wrapper):
             pass
 
 
+def disable_triton_dequant_if_present(model):
+    """
+    For some GPTQModel 3-bit checkpoints, Triton dequant can fail during eval.
+    Force fallback dequant path by disabling Triton dequant when the module exposes
+    `_triton_dequant_enabled`.
+    """
+    n = 0
+    for _, m in model.named_modules():
+        if hasattr(m, "_triton_dequant_enabled"):
+            try:
+                m._triton_dequant_enabled = False
+                n += 1
+            except Exception:
+                pass
+    print(f"[Patch] Disabled Triton dequant on {n} modules.")
+
+
 @torch.no_grad()
 def evaluate_causal_lm(model_or_wrapper, dataloader, device: str):
     model = _unwrap_forward_model(model_or_wrapper)
@@ -198,13 +215,15 @@ def main():
     model, tokenizer = load_base_model_and_tokenizer(cfg)
     maybe_set_tokenizer_pad(tokenizer)
 
+    # Disable Triton dequant for problematic GPTQ eval cases (notably some 3-bit runs)
+    disable_triton_dequant_if_present(model)
+
     model_name = cfg.get("model_name") or cfg.get("base_model_ckpt")
     is_quantized = _is_gptq_quantized_dir(model_name)
 
-    if not is_quantized:
-        inner = _unwrap_forward_model(model)
-        if isinstance(inner, torch.nn.Module):
-            inner.to(device)
+    inner = _unwrap_forward_model(model)
+    if isinstance(inner, torch.nn.Module):
+        inner.to(device)
 
     for obj in [model, getattr(model, "model", None)]:
         if obj is None:

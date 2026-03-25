@@ -580,6 +580,22 @@ def eval_with_teacher_lm(
     }
 
 
+def disable_triton_dequant_if_present(model):
+    """
+    Disable Triton dequant path for GPTQ layers when it is unstable
+    (notably some 3-bit checkpoints) and force the fallback path.
+    """
+    n = 0
+    for _, m in model.named_modules():
+        if hasattr(m, "_triton_dequant_enabled"):
+            try:
+                m._triton_dequant_enabled = False
+                n += 1
+            except Exception:
+                pass
+    print(f"[Patch] Disabled Triton dequant on {n} modules.")
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -654,6 +670,7 @@ def main():
     repair_orientation = bool(eora_cfg.get("repair_adapter_orientation", True))
     target_modules = eora_cfg.get("target_modules", None)
     print("requested target_modules:", target_modules)
+
     calibration_texts = _build_calibration_texts_from_cfg(cfg)
 
     print("=== Exp3 EoRA-LM (quantized recovery) ===")
@@ -692,6 +709,9 @@ def main():
     inner_student = _unwrap_forward_model(student)
     if hasattr(inner_student, "config") and getattr(inner_student.config, "use_cache", None) is True:
         inner_student.config.use_cache = False
+
+    # ---- important for some 3-bit GPTQ checkpoints: disable Triton dequant ----
+    disable_triton_dequant_if_present(student)
 
     # ---- repair loaded adapter orientation if requested ----
     repaired_adapter_modules = 0
@@ -752,6 +772,7 @@ def main():
             "Task metrics are token-weighted loss/ppl; alignment metrics are KL and logits-MSE to the optimized teacher.",
             "alpha is recorded for experiment bookkeeping, but GPTQModel EoRA generation primarily uses rank.",
             "Calibration text collection currently assumes a non-streaming / indexable dataset.",
+            "Triton dequant is disabled after loading the student when available, to avoid unstable 3-bit eval paths.",
         ],
     }
     save_json(meta, os.path.join(output_dir, "meta.json"))
