@@ -1,4 +1,4 @@
-# scripts/utils/summarize_exp1_lm.py
+# scripts/utils/summarize_exp2_lm.py
 from __future__ import annotations
 
 import json
@@ -12,11 +12,11 @@ from typing import Dict, Any, List, Optional, Tuple
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_EXP1_ROOT = PROJECT_ROOT / "outputs" / "lm" / "exp1"
-DEFAULT_SUMMARY_CSV = PROJECT_ROOT / "outputs" / "lm" / "exp1_summary.csv"
+DEFAULT_EXP2_ROOT = PROJECT_ROOT / "outputs" / "lm" / "exp2"
+DEFAULT_SUMMARY_CSV = PROJECT_ROOT / "outputs" / "lm" / "exp2_summary.csv"
 
-# 这里默认给目录，不强制给具体 metrics.json
-# 脚本会自动在这个目录下递归寻找 metrics.json，并优先选 val_loss 最低的那个
+# 默认给目录，不强制给具体 metrics.json
+# 脚本会自动在这个目录下递归寻找 metrics.json，并优先选 val_loss 最低的 teacher
 DEFAULT_TEACHER_SOURCE = PROJECT_ROOT / "outputs" / "lm" / "exp0" / "optimized_lm_small"
 
 
@@ -46,7 +46,7 @@ def safe_relpath(path: Path, base: Path) -> str:
 def infer_branch(exp_name: str) -> Optional[str]:
     name = exp_name.lower()
     if "lora" in name:
-        return "LoRA"
+        return "LoRA-KD" if "kd" in name else "LoRA"
     if "eora" in name:
         return "EoRA"
     return None
@@ -61,8 +61,10 @@ def parse_phase(exp_name: str) -> Optional[str]:
     """
     Examples:
       0_baseline_xxx   -> 0
+      1_xxx            -> 1
       1a_xxx           -> 1a
       1b_xxx           -> 1b
+      2_xxx            -> 2
       2a_xxx           -> 2a
       2b_xxx           -> 2b
       3_xxx            -> 3
@@ -90,12 +92,6 @@ def parse_seed(name: str) -> Optional[int]:
 
 
 def infer_target_tag_from_name(name: str) -> Optional[str]:
-    """
-    Parse tags like:
-      tm-ap
-      tm-apf
-      tm-apfh
-    """
     m = re.search(r"(tm-[a-z0-9]+)", name.lower())
     if not m:
         return None
@@ -113,8 +109,14 @@ def extract_metrics_lm(metrics_json: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "val_loss": val.get("loss"),
         "val_ppl": val.get("ppl"),
+        "val_kl_to_teacher": val.get("kl_to_teacher"),
+        "val_mse_logits_to_teacher": val.get("mse_logits_to_teacher"),
+        "val_valid_tokens": val.get("valid_tokens"),
         "test_loss": test.get("loss"),
         "test_ppl": test.get("ppl"),
+        "test_kl_to_teacher": test.get("kl_to_teacher"),
+        "test_mse_logits_to_teacher": test.get("mse_logits_to_teacher"),
+        "test_valid_tokens": test.get("valid_tokens"),
     }
 
 
@@ -123,6 +125,7 @@ def resolve_teacher_metrics(source: Path) -> Tuple[Dict[str, Any], Optional[Path
     Accept either:
       - a metrics.json file
       - or a directory containing multiple metrics.json files
+
     If a directory is given, choose the candidate with the lowest val_loss.
     """
     if source.is_file():
@@ -182,7 +185,11 @@ def load_teacher_metrics(source: Path) -> Tuple[Dict[str, Any], Optional[Path]]:
 # Metadata extraction
 # ============================================================
 
-def maybe_extract_cfg(metrics_json: Dict[str, Any], meta_json: Optional[Dict[str, Any]], cfg_key: str) -> Dict[str, Any]:
+def maybe_extract_cfg(
+    metrics_json: Dict[str, Any],
+    meta_json: Optional[Dict[str, Any]],
+    cfg_key: str,
+) -> Dict[str, Any]:
     d = metrics_json.get(cfg_key)
     if isinstance(d, dict) and d:
         return d
@@ -201,7 +208,7 @@ def maybe_extract_alpha(
     branch: Optional[str],
 ) -> Optional[float]:
     cfg_key = None
-    if branch == "LoRA":
+    if branch in {"LoRA", "LoRA-KD"}:
         cfg_key = "lora"
     elif branch == "EoRA":
         cfg_key = "eora"
@@ -230,7 +237,7 @@ def maybe_extract_target_modules(
     branch: Optional[str],
 ) -> Optional[str]:
     cfg_key = None
-    if branch == "LoRA":
+    if branch in {"LoRA", "LoRA-KD"}:
         cfg_key = "lora"
     elif branch == "EoRA":
         cfg_key = "eora"
@@ -269,11 +276,42 @@ def maybe_extract_train_fields(
     }
 
 
+def maybe_extract_teacher_path(
+    metrics_json: Dict[str, Any],
+    meta_json: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    for k in ["teacher_model_dir", "optimized_model_dir"]:
+        v = metrics_json.get(k)
+        if v is not None:
+            return v
+        if meta_json:
+            v = meta_json.get(k)
+            if v is not None:
+                return v
+    return None
+
+
+def maybe_extract_kd_fields(
+    metrics_json: Dict[str, Any],
+    meta_json: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    kd_cfg = metrics_json.get("kd", {}) or {}
+    if not kd_cfg and meta_json:
+        kd_cfg = meta_json.get("kd", {}) or {}
+
+    return {
+        "kd_T": kd_cfg.get("T"),
+        "kd_lambda": kd_cfg.get("lambda"),
+        "kd_sup_lambda": kd_cfg.get("sup_lambda"),
+        "kd_loss_type": kd_cfg.get("loss"),
+    }
+
+
 # ============================================================
 # Main scanning
 # ============================================================
 
-def scan_exp1_lm(
+def scan_exp2_lm(
     root: Path,
     teacher_test_loss: Optional[float],
     teacher_test_ppl: Optional[float],
@@ -315,6 +353,7 @@ def scan_exp1_lm(
             target_modules = infer_target_tag_from_name(exp_name)
 
         train_fields = maybe_extract_train_fields(metrics_json, meta_json)
+        kd_fields = maybe_extract_kd_fields(metrics_json, meta_json)
 
         model_name = metrics_json.get("model_name")
         if model_name is None and meta_json:
@@ -324,9 +363,7 @@ def scan_exp1_lm(
         if task_type is None and meta_json:
             task_type = meta_json.get("task_type")
 
-        optimized_model_dir = metrics_json.get("optimized_model_dir")
-        if optimized_model_dir is None and meta_json:
-            optimized_model_dir = meta_json.get("optimized_model_dir")
+        teacher_path = maybe_extract_teacher_path(metrics_json, meta_json)
 
         test_loss_minus_teacher = None
         test_ppl_minus_teacher = None
@@ -347,8 +384,14 @@ def scan_exp1_lm(
             "target_modules": target_modules,
             "val_loss": m["val_loss"],
             "val_ppl": m["val_ppl"],
+            "val_kl_to_teacher": m["val_kl_to_teacher"],
+            "val_mse_logits_to_teacher": m["val_mse_logits_to_teacher"],
+            "val_valid_tokens": m["val_valid_tokens"],
             "test_loss": m["test_loss"],
             "test_ppl": m["test_ppl"],
+            "test_kl_to_teacher": m["test_kl_to_teacher"],
+            "test_mse_logits_to_teacher": m["test_mse_logits_to_teacher"],
+            "test_valid_tokens": m["test_valid_tokens"],
             "teacher_test_loss": teacher_test_loss,
             "teacher_test_ppl": teacher_test_ppl,
             "test_loss_minus_teacher": test_loss_minus_teacher,
@@ -358,9 +401,13 @@ def scan_exp1_lm(
             "max_train_steps": train_fields["max_train_steps"],
             "lr": train_fields["lr"],
             "grad_accum": train_fields["grad_accum"],
+            "kd_T": kd_fields["kd_T"],
+            "kd_lambda": kd_fields["kd_lambda"],
+            "kd_sup_lambda": kd_fields["kd_sup_lambda"],
+            "kd_loss_type": kd_fields["kd_loss_type"],
             "task_type": task_type,
             "model_name": model_name,
-            "optimized_model_dir": optimized_model_dir,
+            "teacher_path": teacher_path,
             "run_dir": safe_relpath(run_dir, PROJECT_ROOT),
         }
         rows.append(row)
@@ -386,8 +433,14 @@ def build_teacher_row(teacher_metrics: Dict[str, Any], teacher_metrics_path: Pat
         "target_modules": None,
         "val_loss": teacher_metrics.get("teacher_val_loss"),
         "val_ppl": teacher_metrics.get("teacher_val_ppl"),
+        "val_kl_to_teacher": None,
+        "val_mse_logits_to_teacher": None,
+        "val_valid_tokens": None,
         "test_loss": teacher_metrics.get("teacher_test_loss"),
         "test_ppl": teacher_metrics.get("teacher_test_ppl"),
+        "test_kl_to_teacher": None,
+        "test_mse_logits_to_teacher": None,
+        "test_valid_tokens": None,
         "teacher_test_loss": teacher_metrics.get("teacher_test_loss"),
         "teacher_test_ppl": teacher_metrics.get("teacher_test_ppl"),
         "test_loss_minus_teacher": 0.0,
@@ -397,9 +450,13 @@ def build_teacher_row(teacher_metrics: Dict[str, Any], teacher_metrics_path: Pat
         "max_train_steps": None,
         "lr": None,
         "grad_accum": None,
+        "kd_T": None,
+        "kd_lambda": None,
+        "kd_sup_lambda": None,
+        "kd_loss_type": None,
         "task_type": teacher_metrics.get("teacher_task_type"),
         "model_name": teacher_metrics.get("teacher_model_name"),
-        "optimized_model_dir": None,
+        "teacher_path": None,
         "run_dir": safe_relpath(teacher_metrics_path.parent, PROJECT_ROOT),
     }
 
@@ -422,8 +479,14 @@ def write_csv(rows: List[Dict[str, Any]], out_path: Path):
         "target_modules",
         "val_loss",
         "val_ppl",
+        "val_kl_to_teacher",
+        "val_mse_logits_to_teacher",
+        "val_valid_tokens",
         "test_loss",
         "test_ppl",
+        "test_kl_to_teacher",
+        "test_mse_logits_to_teacher",
+        "test_valid_tokens",
         "teacher_test_loss",
         "teacher_test_ppl",
         "test_loss_minus_teacher",
@@ -433,9 +496,13 @@ def write_csv(rows: List[Dict[str, Any]], out_path: Path):
         "max_train_steps",
         "lr",
         "grad_accum",
+        "kd_T",
+        "kd_lambda",
+        "kd_sup_lambda",
+        "kd_loss_type",
         "task_type",
         "model_name",
-        "optimized_model_dir",
+        "teacher_path",
         "run_dir",
     ]
     with out_path.open("w", newline="", encoding="utf-8") as f:
@@ -476,19 +543,22 @@ def print_console_summary(
     root: Path,
     teacher_metrics_used: Optional[Path],
 ):
-    exp_rows = [r for r in rows if r["branch"] in {"LoRA", "EoRA"}]
-    lora = [r for r in exp_rows if r["branch"] == "LoRA"]
+    exp_rows = [r for r in rows if r["branch"] in {"LoRA", "LoRA-KD", "EoRA"}]
+    lora = [r for r in exp_rows if r["branch"] in {"LoRA", "LoRA-KD"}]
     eora = [r for r in exp_rows if r["branch"] == "EoRA"]
 
     def best_of(branch_rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        ok = [r for r in branch_rows if r["test_kl_to_teacher"] is not None]
+        if ok:
+            return sorted(ok, key=lambda x: x["test_kl_to_teacher"])[0]
         ok = [r for r in branch_rows if r["test_loss"] is not None]
         if not ok:
             return None
-        return sorted(ok, key=lambda x: x["test_loss"])[0]  # lower is better
+        return sorted(ok, key=lambda x: x["test_loss"])[0]
 
-    print("\n================ EXP1 LM SUMMARY ================\n")
+    print("\n================ EXP2 LM SUMMARY ================\n")
     print(f"Scan dir: {root}")
-    print(f"Found runs: LoRA={len(lora)}, EoRA={len(eora)}")
+    print(f"Found runs: LoRA-family={len(lora)}, EoRA={len(eora)}")
     print(f"Teacher metrics source: {teacher_metrics_used if teacher_metrics_used else 'NA'}")
     print(f"Teacher test_loss: {fmt(teacher_test_loss)}")
     print(f"Teacher test_ppl : {fmt(teacher_test_ppl)}\n")
@@ -498,25 +568,27 @@ def print_console_summary(
 
     if bL:
         print(
-            f"[BEST LoRA]  {bL['exp_name']}  seed={bL['seed']}  rank={bL['rank']}  "
+            f"[BEST LoRA/KD]  {bL['exp_name']}  seed={bL['seed']}  rank={bL['rank']}  "
             f"alpha={fmt(bL['alpha'])}  ar={bL['alpha_over_r']}  "
             f"target={bL['target_modules']}  "
             f"test_loss={fmt(bL['test_loss'])}  test_ppl={fmt(bL['test_ppl'])}  "
-            f"loss_gap_to_teacher={fmt(bL['test_loss_minus_teacher'])}"
+            f"test_kl_to_teacher={fmt(bL['test_kl_to_teacher'])}  "
+            f"test_mse_logits_to_teacher={fmt(bL['test_mse_logits_to_teacher'])}"
         )
     else:
-        print("[BEST LoRA]  NA")
+        print("[BEST LoRA/KD]  NA")
 
     if bE:
         print(
-            f"[BEST EoRA]  {bE['exp_name']}  seed={bE['seed']}  rank={bE['rank']}  "
+            f"[BEST EoRA]      {bE['exp_name']}  seed={bE['seed']}  rank={bE['rank']}  "
             f"alpha={fmt(bE['alpha'])}  ar={bE['alpha_over_r']}  "
             f"target={bE['target_modules']}  "
             f"test_loss={fmt(bE['test_loss'])}  test_ppl={fmt(bE['test_ppl'])}  "
-            f"loss_gap_to_teacher={fmt(bE['test_loss_minus_teacher'])}"
+            f"test_kl_to_teacher={fmt(bE['test_kl_to_teacher'])}  "
+            f"test_mse_logits_to_teacher={fmt(bE['test_mse_logits_to_teacher'])}"
         )
     else:
-        print("[BEST EoRA]  NA")
+        print("[BEST EoRA]      NA")
 
     print("\n--- Best by target_modules ---")
     by_target = defaultdict(list)
@@ -524,14 +596,20 @@ def print_console_summary(
         by_target[(r["branch"], r["target_modules"])].append(r)
 
     for (branch, target), rs in sorted(by_target.items(), key=lambda x: (x[0][0], str(x[0][1]))):
-        ok = [r for r in rs if r["test_loss"] is not None]
-        if not ok:
-            continue
-        best = sorted(ok, key=lambda x: x["test_loss"])[0]
+        ok = [r for r in rs if r["test_kl_to_teacher"] is not None]
+        if ok:
+            best = sorted(ok, key=lambda x: x["test_kl_to_teacher"])[0]
+        else:
+            ok = [r for r in rs if r["test_loss"] is not None]
+            if not ok:
+                continue
+            best = sorted(ok, key=lambda x: x["test_loss"])[0]
+
         print(
-            f"{branch:4s}  target={target}  "
+            f"{branch:7s}  target={target}  "
             f"best={best['exp_name']}  seed={best['seed']}  "
-            f"test_loss={fmt(best['test_loss'])}  test_ppl={fmt(best['test_ppl'])}"
+            f"test_loss={fmt(best['test_loss'])}  "
+            f"test_kl_to_teacher={fmt(best['test_kl_to_teacher'])}"
         )
 
     grouped = defaultdict(list)
@@ -548,15 +626,22 @@ def print_console_summary(
             x[3] if x[3] is not None else 10**9,
         ),
     )
+
     for k in keys:
         rs = grouped[k]
         mu_loss, sd_loss = mean_std([r["test_loss"] for r in rs])
         mu_ppl, sd_ppl = mean_std([r["test_ppl"] for r in rs])
+        mu_kl, sd_kl = mean_std([r["test_kl_to_teacher"] for r in rs])
+        mu_mse, sd_mse = mean_std([r["test_mse_logits_to_teacher"] for r in rs])
         mu_gap, sd_gap = mean_std([r["test_loss_minus_teacher"] for r in rs])
+
         print(
-            f"{k[0]:4s}  target={k[1]}  r={k[2]}  ar={k[3]}  "
-            f"n={len(rs)}  test_loss={fmt(mu_loss)}±{fmt(sd_loss)}  "
+            f"{k[0]:7s}  target={k[1]}  r={k[2]}  ar={k[3]}  "
+            f"n={len(rs)}  "
+            f"test_loss={fmt(mu_loss)}±{fmt(sd_loss)}  "
             f"test_ppl={fmt(mu_ppl)}±{fmt(sd_ppl)}  "
+            f"test_kl={fmt(mu_kl)}±{fmt(sd_kl)}  "
+            f"test_mse={fmt(mu_mse)}±{fmt(sd_mse)}  "
             f"loss_gap_to_teacher={fmt(mu_gap)}±{fmt(sd_gap)}"
         )
 
@@ -569,7 +654,7 @@ def print_console_summary(
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=str, default=str(DEFAULT_EXP1_ROOT))
+    ap.add_argument("--root", type=str, default=str(DEFAULT_EXP2_ROOT))
     ap.add_argument("--out_csv", type=str, default=str(DEFAULT_SUMMARY_CSV))
     ap.add_argument(
         "--teacher_metrics_source",
@@ -588,7 +673,7 @@ def main():
     teacher_test_loss = teacher_metrics.get("teacher_test_loss")
     teacher_test_ppl = teacher_metrics.get("teacher_test_ppl")
 
-    rows = scan_exp1_lm(root, teacher_test_loss, teacher_test_ppl)
+    rows = scan_exp2_lm(root, teacher_test_loss, teacher_test_ppl)
 
     if args.include_teacher_row and teacher_metrics_used is not None:
         teacher_row = build_teacher_row(teacher_metrics, teacher_metrics_used)
@@ -596,7 +681,7 @@ def main():
             rows.append(teacher_row)
 
     def sort_key(r):
-        branch_order = {"Teacher": 0, "LoRA": 1, "EoRA": 2}
+        branch_order = {"Teacher": 0, "LoRA": 1, "LoRA-KD": 2, "EoRA": 3}
         phase = r["phase"] if r["phase"] is not None else ""
         rk = r["rank"] if r["rank"] is not None else -1
         ar = r["alpha_over_r"] if r["alpha_over_r"] is not None else -1
