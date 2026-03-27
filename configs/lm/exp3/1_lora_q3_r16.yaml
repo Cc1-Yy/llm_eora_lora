@@ -3,7 +3,7 @@ tokenizer_name: outputs/lm/exp0/optimized_small/model
 task_type: causal_lm
 seed: 42
 
-output_dir: outputs/lm/exp3/1_lora_recover_q3_r16_ar1_tm-ap
+output_dir: outputs/lm/exp3/1_lora_q3_r16
 
 optimized_model_dir: outputs/lm/exp0/optimized_small/model
 quantized_model_dir: outputs/lm/exp0/quantize_optimized_lm_small_3bit

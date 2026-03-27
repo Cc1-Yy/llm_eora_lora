@@ -3,7 +3,7 @@ tokenizer_name: outputs/lm/exp0/optimized_small/model
 task_type: causal_lm
 seed: 42
 
-output_dir: outputs/lm/exp3/0_quantized_baseline_eval
+output_dir: outputs/lm/exp3/1_lora_q4_r16
 
 optimized_model_dir: outputs/lm/exp0/optimized_small/model
 quantized_model_dir: outputs/lm/exp0/quantized_optimized_small_gptq4
@@ -28,3 +28,29 @@ data:
   persistent_workers: false
   prefetch_factor: 2
   pad_to_multiple_of: 8
+
+lora:
+  rank: 16
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - c_attn
+    - c_proj
+
+train:
+  lr: 1.5e-05
+  weight_decay: 0.01
+  num_epochs: 3
+  grad_clip: 1.0
+  max_train_steps: 3000
+  use_amp: true
+  grad_accum_steps: 2
+  warmup_ratio: 0.03
+  scheduler: linear
+  log_every_steps: 20
+  eval_every_steps: 100
+
+distill:
+  temperature: 1.0
+
+select_best_by: loss

@@ -1,9 +1,9 @@
-model_name: gpt2
+model_name: outputs/lm/exp0/quantize_optimized_lm_small_3bit
 tokenizer_name: outputs/lm/exp0/optimized_small/model
 task_type: causal_lm
 seed: 42
 
-output_dir: outputs/lm/exp3/1_eora_recover_q3_r32_ar1_tm-ap_paperlike
+output_dir: outputs/lm/exp3/0_baseline_quantized_q3
 
 optimized_model_dir: outputs/lm/exp0/optimized_small/model
 quantized_model_dir: outputs/lm/exp0/quantize_optimized_lm_small_3bit
@@ -28,13 +28,6 @@ data:
   persistent_workers: false
   prefetch_factor: 2
   pad_to_multiple_of: 8
-
-eora:
-  rank: 32
-  alpha: 32
-  calibration_num_samples: 128
-  calibration_dataset_concat_size: 1024
-  repair_adapter_orientation: true
 
 distill:
   temperature: 1.0
