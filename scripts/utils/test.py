@@ -1,17 +1,30 @@
-import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 
-cmaps = ['RdYlBu', 'RdYlBu_r']
+csv_path = "outputs/lm/report_exp3/table_exp3_lm_main_summary.csv"
+out_path = "outputs/lm/report_exp3/table_exp3_lm_main_summary.tex"
 
-gradient = np.linspace(0, 1, 256)
-gradient = np.vstack([gradient, gradient])
+df = pd.read_csv(csv_path)
 
-fig, axes = plt.subplots(len(cmaps), 1, figsize=(8, 2.5))
+body = df.to_latex(
+    index=False,
+    escape=False,
+    na_rep="--",
+    float_format="%.4f",
+    column_format="lcccccc",
+)
 
-for ax, cmap in zip(axes, cmaps):
-    ax.imshow(gradient, aspect='auto', cmap=cmap)
-    ax.set_axis_off()
-    ax.text(-0.02, 0.5, cmap, va='center', ha='right', transform=ax.transAxes)
+latex_table = f"""
+\\begin{{table}}[H]
+    \\centering
+    \\small
+    \\renewcommand{{\\arraystretch}}{{1.12}}
+    \\caption{{Main language-modelling results for Experiment~3 under quantization recovery.}}
+    \\label{{tab:exp3_lm_main_summary}}
+{body}
+\\end{{table}}
+"""
 
-plt.tight_layout()
-plt.show()
+with open(out_path, "w", encoding="utf-8") as f:
+    f.write(latex_table)
+
+print(f"Saved to: {out_path}")
