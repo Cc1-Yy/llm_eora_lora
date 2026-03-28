@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SUMMARY_CSV = PROJECT_ROOT / "outputs" / "lm" / "exp1_summary.csv"
-DEFAULT_OUT_DIR = PROJECT_ROOT / "outputs" / "lm" / "report_exp1_figs"
+DEFAULT_OUT_DIR = PROJECT_ROOT / "outputs" / "lm" / "report_exp1"
 
 
 # ============================================================
