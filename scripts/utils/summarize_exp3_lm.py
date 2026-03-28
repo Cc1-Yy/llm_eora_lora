@@ -374,7 +374,34 @@ def scan_exp3_lm(
 
         r, ar = parse_r_ar(exp_name)
         if r is None or ar is None:
-            r, ar = parse_r_ar(run_name)
+            r2, ar2 = parse_r_ar(run_name)
+            r = r if r is not None else r2
+            ar = ar if ar is not None else ar2
+
+        # fallback: read rank/alpha from meta/config for EoRA or LoRA
+        cfg_key = None
+        if branch == "LoRA":
+            cfg_key = "lora"
+        elif branch == "EoRA":
+            cfg_key = "eora"
+
+        if cfg_key is not None:
+            cfg_block = maybe_extract_cfg(metrics_json, meta_json, cfg_json, cfg_key)
+
+            if r is None:
+                rr = cfg_block.get("rank")
+                try:
+                    r = int(rr) if rr is not None else None
+                except Exception:
+                    pass
+
+            if ar is None:
+                aa = cfg_block.get("alpha")
+                try:
+                    if aa is not None and r is not None and int(r) != 0:
+                        ar = float(aa) / float(r)
+                except Exception:
+                    pass
 
         seed = metrics_json.get("seed")
         if seed is None and meta_json:
