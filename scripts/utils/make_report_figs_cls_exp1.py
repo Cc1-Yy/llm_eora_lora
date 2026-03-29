@@ -368,7 +368,7 @@ def plot_overall_bar(df: pd.DataFrame, teacher_acc: Optional[float], out_dir: Pa
     )
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(labels, rotation=25, ha="right")
+    ax.set_xticklabels(labels, rotation=0, ha="center")
     ax.set_ylabel("Test Accuracy")
     ax.set_title("Exp1-cls: Overall Comparison")
     ax.set_ylim(min(vals) - 0.03, max(vals) + 0.012)
@@ -536,7 +536,7 @@ def plot_gap_to_teacher(df: pd.DataFrame, teacher_acc: Optional[float], out_dir:
     branches = exp_df["branch"].tolist()
     xs = add_branch_gap_positions(branches)
 
-    fig, ax = plt.subplots(figsize=(12.0, 5.7))
+    fig, ax = plt.subplots(figsize=(14.5, 5.7))
     bars = ax.bar(
         xs,
         exp_df["teacher_minus_test"].to_numpy(),
@@ -547,7 +547,7 @@ def plot_gap_to_teacher(df: pd.DataFrame, teacher_acc: Optional[float], out_dir:
     )
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(exp_df["label"].tolist(), rotation=70, ha="right")
+    ax.set_xticklabels(exp_df["label"].tolist(), rotation=0, ha="center")
     ax.set_ylabel("Optimized Model Accuracy - Test Accuracy")
     ax.set_title("Exp1-cls: Gap to Optimized Model")
 
