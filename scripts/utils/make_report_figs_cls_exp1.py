@@ -111,7 +111,7 @@ def save_fig(fig: plt.Figure, out_path: Path, use_tight_layout: bool = True) -> 
 
     fig.savefig(
         out_path,
-        dpi=600,
+        dpi=900,
         bbox_inches="tight",
         pad_inches=0.08,
         facecolor="white",
@@ -329,24 +329,6 @@ def plot_overall_bar(df: pd.DataFrame, teacher_acc: Optional[float], out_dir: Pa
             "branch": "Teacher",
         })
 
-    sub_l = exp_df[exp_df["branch"] == "LoRA"].copy()
-    if len(sub_l) > 0:
-        best_l = sub_l.sort_values("test_acc", ascending=False).iloc[0]
-        rows.append({
-            "label": f"Best LoRA\nr{int(best_l['rank'])}, ar={best_l['alpha_over_r']:g}",
-            "value": float(best_l["test_acc"]),
-            "branch": "LoRA",
-        })
-
-    sub_e = exp_df[exp_df["branch"] == "EoRA"].copy()
-    if len(sub_e) > 0:
-        best_e = sub_e.sort_values("test_acc", ascending=False).iloc[0]
-        rows.append({
-            "label": f"Best EoRA\nr{int(best_e['rank'])}, ar={best_e['alpha_over_r']:g}",
-            "value": float(best_e["test_acc"]),
-            "branch": "EoRA",
-        })
-
     reps = [
         ("LoRA", 4, 1.0),
         ("LoRA", 8, 1.0),
@@ -369,18 +351,10 @@ def plot_overall_bar(df: pd.DataFrame, teacher_acc: Optional[float], out_dir: Pa
             "branch": branch,
         })
 
-    seen = set()
-    clean_rows = []
-    for r in rows:
-        if r["label"] in seen:
-            continue
-        seen.add(r["label"])
-        clean_rows.append(r)
-
     colors = single_method_colors()
-    labels = [r["label"] for r in clean_rows]
-    vals = [r["value"] for r in clean_rows]
-    branches = [r["branch"] for r in clean_rows]
+    labels = [r["label"] for r in rows]
+    vals = [r["value"] for r in rows]
+    branches = [r["branch"] for r in rows]
     xs = add_branch_gap_positions(branches)
 
     fig, ax = plt.subplots(figsize=(10.8, 5.6))
